@@ -145,6 +145,66 @@ function render(html){ app.innerHTML = html; window.scrollTo(0,0); }
 function on(sel, ev, fn){ app.querySelectorAll(sel).forEach(el => el.addEventListener(ev, fn)); }
 const val = sel => { const el = app.querySelector(sel); return el ? el.value : ''; };
 
+// Shared by code redeem and open-link start
+function startStudentSession(data){
+  const session = buildSession(data.questions, data.exam.shuffle_q, data.exam.shuffle_c, data.session_id);
+  const answers = {};
+  session.forEach(q => { const sv = data.saved[q.id]; answers[q.srcIdx] = sv === undefined ? null : sv; });
+  const endAt = new Date(data.exam.started_at).getTime() + data.exam.duration_min * 60000;
+  studentState = { sessionId: data.session_id, student: data.student, exam: data.exam, session, answers, endAt, idx: 0 };
+  location.hash = '#/exam';
+}
+
+// Open link (no code): student types their name and starts
+async function openLanding(token, err, info){
+  document.body.classList.add('student-view');
+  if (info === undefined){
+    render('<div class="card"><div class="note">بنفتح الامتحان…</div></div>');
+    const { data } = await sb.rpc('open_info', { p_token: token });
+    if (!data || !data.ok){
+      const m = { invalid_link:'اللينك ده مش صحيح أو اتلغى. اطلب من المدرس لينك جديد.',
+        not_published:'الامتحان ده مش متاح حاليًا. كلم مدرسك.',
+        not_yet:'الامتحان لسه مفتحش في معاده.',
+        expired:'فترة الامتحان خلصت. كلم مدرسك.',
+        link_off:'اللينك ده متوقف دلوقتي. اطلب من المدرس لينك شغال أو كود.' };
+      return render(`<div class="card"><div class="h2">مشكلة في اللينك</div><div class="err">${esc(m[data && data.error] || 'حصلت مشكلة، جرب تاني.')}</div></div>`);
+    }
+    return openLanding(token, '', data);
+  }
+  render(`
+  <header class="student-hero">
+    <span class="study-art" aria-hidden="true">✦ ▤ ◇</span>
+    <span class="study-tag"><i aria-hidden="true"></i>مساحتك للتركيز والإنجاز</span>
+    <h1 class="h1">${esc(info.title)}</h1>
+    <p>${[info.subject, info.grade].filter(Boolean).map(esc).join(' · ') || 'امتحان مفتوح من مدرسك'}</p>
+  </header>
+  <div class="card">
+    <div class="h2" style="margin-top:0">سجّل اسمك وابدأ</div>
+    <p class="muted">الامتحان ${info.duration_min} دقيقة، وبيتسلّم لوحده لما الوقت يخلص. اكتب اسمك الحقيقي عشان المدرس يعرف صاحب الحل.</p>
+    <label>اسم الطالب</label>
+    <input type="text" id="o-name" placeholder="مثال: أحمد محمد" autocomplete="off">
+    <label>رقم واتساب ولي الأمر (اختياري)</label>
+    <input type="text" id="o-phone" class="ltr" placeholder="مثال: 01012345678" autocomplete="off">
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    <div class="actions"><button class="btn btn-p" id="o-go">تسجيل وبدء الامتحان</button></div>
+  </div>`);
+  on('#o-go','click', async () => {
+    const name = val('#o-name').trim();
+    if (!name) return openLanding(token, 'اكتب اسمك الأول.', info);
+    const { data, error } = await sb.rpc('open_session', { p_token: token, p_name: name, p_phone: val('#o-phone').trim() });
+    if (error || !data || !data.ok){
+      const m = { invalid_link:'اللينك ده مش صحيح أو اتلغى. اطلب من المدرس لينك جديد.',
+        not_published:'الامتحان ده مش متاح حاليًا. كلم مدرسك.',
+        not_yet:'الامتحان لسه مفتحش في معاده.',
+        expired:'فترة الامتحان خلصت. كلم مدرسك.',
+        link_off:'اللينك ده اتوقف. اطلب من المدرس لينك شغال أو كود.',
+        name_required:'اكتب اسمك الأول.' };
+      return openLanding(token, m[data && data.error] || 'حصلت مشكلة، جرب تاني.', info);
+    }
+    startStudentSession(data);
+  });
+}
+
 // ============ STUDENT ============
 function studentLanding(err){
   document.body.classList.add('student-view');
@@ -185,12 +245,7 @@ function studentLanding(err){
         already_completed:'الكود ده اتستخدم وخلّص قبل كده. الكود بيشتغل مرة واحدة بس.' };
       return studentLanding(m[data && data.error] || 'حصلت مشكلة، جرب تاني.');
     }
-    const session = buildSession(data.questions, data.exam.shuffle_q, data.exam.shuffle_c, data.session_id);
-    const answers = {};
-    session.forEach(q => { const sv = data.saved[q.id]; answers[q.srcIdx] = sv === undefined ? null : sv; });
-    const endAt = new Date(data.exam.started_at).getTime() + data.exam.duration_min * 60000;
-    studentState = { sessionId: data.session_id, student: data.student, exam: data.exam, session, answers, endAt, idx: 0 };
-    location.hash = '#/exam';
+    startStudentSession(data);
   });
 }
 
@@ -722,9 +777,30 @@ async function tStudents(){
   on('[data-sdel]','click', async e => { await sb.from('students').delete().eq('id', e.target.dataset.sdel); tStudents(); });
 }
 
+function openLinkCard(exam, base){
+  const link = base + '?open=' + exam.open_token;
+  const waText = 'لينك امتحان "' + exam.title + '": افتح اللينك، اكتب اسمك، وابدأ على طول: ' + link;
+  return `
+    <div class="card">
+      <div class="h2">٢. أو شارك لينك مفتوح (من غير كود)</div>
+      <div class="muted">لينك واحد تبعته لأي حد: الطالب يفتحه، يكتب اسمه، ويحل على طول. اسمه ودرجته بيظهروا لك في المتابعة والنتايج زي طلبة الأكواد بالظبط.</div>
+      ${exam.open_enabled ? `
+      <label>لينك الامتحان</label>
+      <div class="ltr" style="text-align:left;background:var(--gray);border-radius:10px;padding:10px;word-break:break-all;font-size:13px">${esc(link)}</div>
+      <div class="actions">
+        <button class="btn btn-s btn-sm" id="o-copy" data-link="${esc(link)}">نسخ اللينك</button>
+        <a class="btn btn-s btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(waText)}">إرسال على واتساب</a>
+        <button class="btn btn-s btn-sm" id="o-regen">لينك جديد (إبطال القديم)</button>
+        <button class="btn btn-g btn-sm" id="o-disable">إيقاف اللينك</button>
+      </div>` : `
+      <div class="actions"><button class="btn btn-s" id="o-enable">تفعيل اللينك المفتوح</button></div>`}
+      <div class="warn" style="margin-top:10px">أي حد معاه اللينك يقدر يحل، ومفيش قفل مرة واحدة زي الأكواد: نفس الشخص ممكن يحل أكتر من مرة. لو اللينك انتشر غلط، اعمل لينك جديد والقديم يبطل فورًا.</div>
+    </div>`;
+}
+
 async function tCodes(examId){
   const u = await requireTeacher(); if (!u) return;
-  const { data: exams } = await sb.from('exams').select('id,title,published').order('created_at',{ascending:false});
+  const { data: exams } = await sb.from('exams').select('id,title,published,open_enabled,open_token').order('created_at',{ascending:false});
   if (!exams || !exams.length){ location.hash = '#/teacher/new'; return; }
   const exam = exams.find(e=>e.id===examId) || exams[0];
   const { data: codes } = await sb.rpc('exam_code_status', { p_exam: exam.id });
@@ -746,15 +822,16 @@ async function tCodes(examId){
         <button class="btn btn-s" id="c-gen-all">ولّد لكل الطلبة المسجلين اللي ملهمش كود</button>
       </div>
     </div>`}
+    ${exam.published ? openLinkCard(exam, base) : ''}
     ${codes && codes.length ? `<div class="card"><div class="h2">٣. ابعت الامتحان لكل طالب</div><div class="note">اضغط "إرسال على واتساب" جنب اسم الطالب، اختار محادثته، وراجع الرسالة واضغط إرسال من واتساب. الدعوة فيها لينك المنصة وكوده. أو اضغط "نسخ الدعوة" وابعتها بنفسك.</div><div class="muted">${esc(exam.title)}</div>
       ${codes.map(c=>{ const invite = 'أهلًا '+c.student_name+'، ده الكود بتاعك لامتحان "'+exam.title+'". افتح اللينك ده واكتب الكود عشان تبدأ: '+base+'\n\nالكود: '+c.token;
         return `<div class="row"><div>
-        <div class="nm">${esc(c.student_name)} ${chipFor(c.status)}</div>
+        <div class="nm">${esc(c.student_name)} ${chipFor(c.status)}${c.via==='open'?'<span class="chip">رابط مفتوح</span>':''}</div>
         <div class="dt">كود: <span class="ltr">${c.token}</span>${c.started_at?' · بدأ '+new Date(c.started_at).toLocaleString('ar-EG'):''}${c.submitted_at?' · سلّم '+new Date(c.submitted_at).toLocaleString('ar-EG'):''}</div>
-      </div><div class="actions" style="margin:0">
+      </div>${c.via==='open' ? '' : `<div class="actions" style="margin:0">
         <button class="btn btn-s btn-sm" data-copy="${esc(invite)}">نسخ الدعوة</button>
         <a class="btn btn-s btn-sm" target="_blank" rel="noopener" href="${'https://wa.me/?text='+encodeURIComponent(invite)}">إرسال على واتساب</a>
-      </div></div>`;}).join('')}
+      </div>`}</div>`;}).join('')}
     </div>` : '<div class="note">مفيش أكواد لسه للامتحان ده.</div>'}`);
   on('#c-publish','click', async () => {
     const { error } = await sb.from('exams').update({published:true}).eq('id',exam.id);
@@ -772,6 +849,19 @@ async function tCodes(examId){
   };
   on('#c-gen','click', () => gen(val('#c-names').split('\n').map(s=>s.trim()).filter(Boolean).filter(n=>!(codes||[]).some(c=>c.student_name===n))));
   on('#c-gen-all','click', () => gen((st||[]).map(s=>s.name).filter(n=>!(codes||[]).some(c=>c.student_name===n))));
+  on('#o-enable','click', async () => {
+    const { error } = await sb.from('exams').update({ open_enabled: true, open_token: exam.open_token || newtok() }).eq('id', exam.id);
+    if (error){ const el = app.querySelector('#cerr'); if (el) el.innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+    tCodes(exam.id);
+  });
+  on('#o-disable','click', async () => { await sb.from('exams').update({ open_enabled: false }).eq('id', exam.id); tCodes(exam.id); });
+  on('#o-regen','click', async () => { await sb.from('exams').update({ open_token: newtok() }).eq('id', exam.id); tCodes(exam.id); });
+  on('#o-copy','click', e => {
+    const txt = e.target.dataset.link;
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+      () => { e.target.textContent = 'اتنسخ'; setTimeout(()=>e.target.textContent='نسخ اللينك',1500); },
+      () => { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); ta.select(); document.execCommand('copy'); ta.remove(); e.target.textContent = 'اتنسخ'; setTimeout(()=>e.target.textContent='نسخ اللينك',1500); });
+  });
   on('[data-copy]','click', e => {
     const txt = e.target.dataset.copy;
     (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
@@ -799,7 +889,7 @@ async function tTracking(examId){
   }
   const exam = exams.find(e=>e.id===examId) || exams[0];
   const [codeRes, questionRes] = await Promise.all([
-    sb.from('codes').select('id,student_name,status,exam_sessions(id,started_at,status,submissions(id,auto_score,auto_total,time_sec,submitted_at,essay_grades(question_id,awarded)))').eq('exam_id',exam.id).order('created_at'),
+    sb.from('codes').select('id,student_name,status,via,exam_sessions(id,started_at,status,submissions(id,auto_score,auto_total,time_sec,submitted_at,essay_grades(question_id,awarded)))').eq('exam_id',exam.id).order('created_at'),
     sb.from('questions').select('id,points').eq('exam_id',exam.id).eq('type','essay')
   ]);
   if (codeRes.error || questionRes.error) return trackingError();
@@ -837,14 +927,14 @@ async function tTracking(examId){
       <label for="track-status">الحالة</label><select id="track-status"><option value="all">كل الحالات</option value="unused">لسه مدخلش</option value="in_progress">دخل ولم يسلّم</option><option value="submitted">سلّم الامتحان</option></select>
     </div>
     <div id="track-list" aria-live="polite"></div>
-    <div class="note">القائمة بتعرض كل كود طالب للامتحان ده. «دخل ولم يسلّم» معناها إنه بدأ جلسة، مش بالضرورة فاتح الصفحة دلوقتي. لو في أسئلة مقالية، الدرجة بتفضل مبدئية لحد تصحيحها.</div>
+    <div class="note">القائمة بتعرض كل محاولات الامتحان ده، سواء بكود أو باللينك المفتوح (عليها علامة «رابط مفتوح»). «دخل ولم يسلّم» معناها إنه بدأ جلسة، مش بالضرورة فاتح الصفحة دلوقتي. لو في أسئلة مقالية، الدرجة بتفضل مبدئية لحد تصحيحها.</div>
     <a class="btn btn-s" href="#/teacher/results">النتايج وتصحيح المقالي</a>`);
   const draw = () => {
     const query = normAr(val('#track-search')), status = val('#track-status');
     const filtered = rows.filter(r=>(status==='all'||r.status===status)&&normAr(r.student_name).includes(query));
     app.querySelector('#track-list').innerHTML = !rows.length ? '<div class="note">مفيش أكواد طلبة للامتحان ده لسه. اعمل كود لكل طالب من «أكواد الامتحان».</div>' : !filtered.length ? '<div class="note">مفيش طلبة مطابقين للبحث أو الحالة دي.</div>' : filtered.map(r=>`
       <article class="card track-student">
-        <div class="track-head"><strong>${esc(r.student_name)}</strong><span class="chip ${r.status==='submitted'?'c-done':r.status==='in_progress'?'c-prog':'c-new'}">${r.status==='submitted'?'سلّم الامتحان':r.status==='in_progress'?'دخل ولم يسلّم':'لسه مدخلش'}</span></div>
+        <div class="track-head"><strong>${esc(r.student_name)}</strong>${r.via==='open'?'<span class="chip">رابط مفتوح</span>':''}<span class="chip ${r.status==='submitted'?'c-done':r.status==='in_progress'?'c-prog':'c-new'}">${r.status==='submitted'?'سلّم الامتحان':r.status==='in_progress'?'دخل ولم يسلّم':'لسه مدخلش'}</span></div>
         <div class="track-metrics">
           <div><span>الدرجة</span><b>${r.sub?`${r.score} من ${r.total}`:'—'}</b><small>${r.sub?(r.pending?'مبدئية · المقالي مستني التصحيح':`نهائية${r.total?' · '+Math.round(r.score*1000/r.total)/10+'%':''}`):r.status==='submitted'?'النتيجة غير متاحة':'بعد التسليم'}</small></div>
           <div><span>${r.status==='in_progress'?'الوقت من الدخول':'مدة الحل'}</span><b>${r.sub?trackingDuration(r.sub.time_sec):r.status==='in_progress'?trackingDuration(r.elapsed):'—'}</b><small>${r.status==='in_progress'?'حتى آخر تحديث':r.sub?'دقيقة : ثانية':'لسه مبدأش'}</small></div>
@@ -865,12 +955,12 @@ async function tTracking(examId){
 }
 
 async function loadSubmissions(){
-  const { data: subs } = await sb.from('submissions').select('*, exam_sessions(code_id, codes(token, student_name, exam_id, exams(id,title,subject,grade,pass_pct)))').order('submitted_at',{ascending:false});
+  const { data: subs } = await sb.from('submissions').select('*, exam_sessions(code_id, codes(token, student_name, parent_phone, via, exam_id, exams(id,title,subject,grade,pass_pct)))').order('submitted_at',{ascending:false});
   return subs || [];
 }
 function flatSub(s){
   const c = s.exam_sessions?.codes || {};
-  return { id: s.id, session_id: s.session_id, student: c.student_name||'—', token: c.token||'', examId: c.exams?.id||null,
+  return { id: s.id, session_id: s.session_id, student: c.student_name||'—', token: c.token||'', phone: c.parent_phone||'', via: c.via||'code', examId: c.exams?.id||null,
     title: c.exams?.title||'امتحان محذوف', subject: c.exams?.subject||'', grade: c.exams?.grade||'', passPct: c.exams?.pass_pct||50,
     autoScore: s.auto_score, autoTotal: s.auto_total, cc: s.correct_count, nAuto: s.n_auto, bitmap: s.bitmap,
     timeSec: s.time_sec, at: s.submitted_at };
@@ -991,7 +1081,7 @@ async function tReports(){
   const subs = (await loadSubmissions()).map(flatSub);
   if (!subs.length){ teacherShell('#/teacher/reports','<div class="h1">تقارير أولياء الأمور</div><div class="note">مفيش نتايج لسه.</div>'); return; }
   const { data: st } = await sb.from('students').select('name,parent_phone');
-  const phoneFor = n => (st||[]).find(s=>s.name===n)?.parent_phone || '';
+  const phoneFor = (n, subPhone) => (st||[]).find(s=>s.name===n)?.parent_phone || subPhone || '';
   const { data: grades } = await sb.from('essay_grades').select('*');
   const gmap = {}; (grades||[]).forEach(g => { (gmap[g.submission_id]=gmap[g.submission_id]||{})[g.question_id]=Number(g.awarded); });
   const reports = [];
@@ -1024,10 +1114,10 @@ async function tReports(){
       <div class="nm">${esc(r.s.student)} ${r.pending?'<span class="chip c-new">مبدئي</span>':'<span class="chip c-done">نهائي</span>'} <span class="muted">${esc(r.s.title)} · ${r.pct}%</span></div>
       <div class="msg" id="rep-${i}" style="display:none;margin-top:8px">${esc(r.report)}</div>
       <label>رقم واتساب ولي الأمر</label>
-      <input type="text" id="ph-${i}" value="${esc(phoneFor(r.s.student))}">
+      <input type="text" id="ph-${i}" value="${esc(phoneFor(r.s.student, r.s.phone))}">
       <div class="actions">
         <button class="btn btn-s btn-sm" data-show="${i}">عرض / إخفاء التقرير</button>
-        <a class="btn btn-p btn-sm" target="_blank" rel="noopener" href="${waLink(phoneFor(r.s.student), r.report)}" id="wa-${i}">إرسال واتساب</a>
+        <a class="btn btn-p btn-sm" target="_blank" rel="noopener" href="${waLink(phoneFor(r.s.student, r.s.phone), r.report)}" id="wa-${i}">إرسال واتساب</a>
         <button class="btn btn-s btn-sm" data-print="${i}">طباعة / PDF</button>
       </div>
     </div>`).join('')}`);
@@ -1071,6 +1161,8 @@ async function tSettings(){
 // ============ ROUTER ============
 async function route(){
   const h = location.hash || '#/';
+  const openTok = new URLSearchParams(location.search).get('open');
+  if (openTok && !studentState) return openLanding(openTok);
   document.body.classList.toggle('student-view',!h.startsWith('#/teacher'));
   clearInterval(studentState?.timerIv);
   if (h === '#/' || h === '#') return studentLanding();
