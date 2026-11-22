@@ -263,3 +263,86 @@ create policy profiles_owner on profiles for all using (auth.uid() = id) with ch
 -- API access for the signed-in teacher role (RLS policies still apply per row)
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on exams, questions, students, codes, exam_sessions, answers, submissions, essay_grades, profiles to authenticated;
+-- Migration: open-link exam sharing (share without a one-time code)
+-- Safe to run more than once. Existing exams keep open_enabled = false.
+
+alter table exams add column if not exists open_enabled boolean not null default false;
+alter table exams add column if not exists open_token text;
+create unique index if not exists exams_open_token_key on exams(open_token) where open_token is not null;
+alter table codes add column if not exists via text not null default 'code';
+alter table codes add column if not exists parent_phone text not null default '';
+
+-- Teacher code/attempt list now also returns how each attempt entered
+drop function if exists exam_code_status(uuid);
+create function exam_code_status(p_exam uuid)
+returns table(token text, student_name text, status text, started_at timestamptz, submitted_at timestamptz, via text)
+language sql security definer set search_path = public as $$
+  select c.token, c.student_name, c.status, s.started_at, sub.submitted_at, c.via
+  from codes c
+  left join exam_sessions s on s.code_id = c.id
+  left join submissions sub on sub.session_id = s.id
+  where c.exam_id = p_exam
+    and exists (select 1 from exams e where e.id = p_exam and e.teacher_id = auth.uid())
+  order by c.created_at;
+$$;
+
+-- Open link: public exam info for the landing page (no answers)
+create or replace function open_info(p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare e exams;
+begin
+  select * into e from exams where open_token = p_token;
+  if not found then return jsonb_build_object('ok', false, 'error', 'invalid_link'); end if;
+  if not e.open_enabled then return jsonb_build_object('ok', false, 'error', 'link_off'); end if;
+  if not e.published then return jsonb_build_object('ok', false, 'error', 'not_published'); end if;
+  if e.start_at is not null and now() < e.start_at then
+    return jsonb_build_object('ok', false, 'error', 'not_yet', 'start_at', e.start_at); end if;
+  if e.end_at is not null and now() > e.end_at then
+    return jsonb_build_object('ok', false, 'error', 'expired'); end if;
+  return jsonb_build_object('ok', true, 'title', e.title, 'subject', e.subject,
+    'grade', e.grade, 'duration_min', e.duration_min);
+end $$;
+
+-- Open link: register a name and start an attempt. Each start is its own
+-- attempt (its own codes row with via='open'), then grading/autosave/tracking
+-- work exactly like one-time codes.
+create or replace function open_session(p_token text, p_name text, p_phone text default '')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare e exams; c codes; s exam_sessions; qs jsonb;
+begin
+  select * into e from exams where open_token = p_token;
+  if not found then return jsonb_build_object('ok', false, 'error', 'invalid_link'); end if;
+  if not e.open_enabled then return jsonb_build_object('ok', false, 'error', 'link_off'); end if;
+  if not e.published then return jsonb_build_object('ok', false, 'error', 'not_published'); end if;
+  if e.start_at is not null and now() < e.start_at then
+    return jsonb_build_object('ok', false, 'error', 'not_yet', 'start_at', e.start_at); end if;
+  if e.end_at is not null and now() > e.end_at then
+    return jsonb_build_object('ok', false, 'error', 'expired'); end if;
+  if length(trim(coalesce(p_name, ''))) = 0 then
+    return jsonb_build_object('ok', false, 'error', 'name_required'); end if;
+
+  insert into codes (exam_id, student_name, token, via, parent_phone)
+  values (e.id, left(trim(p_name), 120),
+          'O' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 11)),
+          'open', left(trim(coalesce(p_phone, '')), 40))
+  returning * into c;
+  insert into exam_sessions (code_id) values (c.id) returning * into s;
+  update codes set status = 'in_progress' where id = c.id;
+
+  -- questions WITHOUT answers leak: strip correct/accepted from the payload
+  select jsonb_agg(jsonb_build_object(
+    'id', q.id, 'ord', q.ord, 'text', q.text, 'type', q.type,
+    'choices', q.choices, 'points', q.points) order by q.ord)
+  into qs from questions q where q.exam_id = e.id;
+
+  return jsonb_build_object(
+    'ok', true, 'session_id', s.id, 'student', c.student_name,
+    'exam', jsonb_build_object(
+      'id', e.id, 'title', e.title, 'subject', e.subject, 'grade', e.grade,
+      'duration_min', e.duration_min, 'pass_pct', e.pass_pct,
+      'shuffle_q', e.shuffle_q, 'shuffle_c', e.shuffle_c, 'show_result', e.show_result,
+      'started_at', s.started_at),
+    'questions', coalesce(qs, '[]'::jsonb),
+    'saved', '{}'::jsonb
+  );
+end $$;
