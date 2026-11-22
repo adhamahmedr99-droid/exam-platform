@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>منصة الامتحانات</title>
+<style>
+:root{--navy:#12233f;--navy2:#1d3459;--teal:#0f8b8d;--tealsoft:#e2f3f3;--gray:#f3f5f7;--ink:#1a2433;--ink2:#5c6675;--hair:#e3e7ec;--red:#b3261e;}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:var(--gray);color:var(--ink);line-height:1.7}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 1px 3px rgba(18,35,63,.07)}
+.btn{display:inline-block;border:none;border-radius:12px;padding:11px 20px;font:inherit;font-size:15px;cursor:pointer;text-decoration:none;text-align:center}
+.btn-p{background:var(--navy);color:#fff}
+.btn-s{background:#fff;color:var(--navy);border:1px solid var(--hair)}
+.btn-g{background:none;color:var(--ink2)}
+.btn-t{background:var(--teal);color:#fff}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn-sm{padding:7px 13px;font-size:13px;border-radius:10px}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=datetime-local],textarea,select{width:100%;border:1px solid var(--hair);border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;background:#fff;color:var(--ink);margin-top:4px}
+textarea{min-height:88px;resize:vertical}
+label{font-size:13px;color:var(--ink2);display:block;margin-top:12px}
+.chip{display:inline-block;font-size:11px;padding:4px 10px;border-radius:999px;margin-inline-start:6px}
+.c-new{background:var(--gray);color:var(--ink2)}.c-done{background:var(--tealsoft);color:var(--teal)}.c-dup{background:#fbe9e7;color:var(--red)}.c-prog{background:#fff4d6;color:#8a6100}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0}
+.scard{background:var(--gray);border-radius:14px;padding:13px}
+.scard b{display:block;font-size:23px;color:var(--navy)}
+.scard span{font-size:12px;color:var(--ink2)}
+.topbar{background:var(--navy);color:#fff;border-radius:16px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;margin:12px 0}
+.topbar .t1{font-size:17px;font-weight:700}
+.topbar .t2{font-size:12px;opacity:.8}
+.timer{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;background:rgba(255,255,255,.13);border-radius:12px;padding:3px 13px}
+.timer.low{background:var(--red);animation:blink 1s step-start infinite}
+@keyframes blink{50%{opacity:.7}}
+.qnav{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.qnav button{width:36px;height:36px;border-radius:10px;border:1px solid var(--hair);background:#fff;color:var(--ink2);font:inherit;font-size:13px;cursor:pointer}
+.qnav button.done{background:var(--tealsoft);border-color:var(--teal);color:var(--teal);font-weight:700}
+.qnav button.cur{outline:2px solid var(--navy)}
+.choice{display:block;width:100%;text-align:start;padding:13px 15px;border:1px solid var(--hair);border-radius:14px;background:#fff;color:var(--ink);font:inherit;font-size:15px;margin-top:8px;cursor:pointer}
+.choice.sel{border-color:var(--teal);background:var(--tealsoft);color:var(--teal);font-weight:600}
+.shell{display:block}
+.side{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--hair);margin-bottom:14px;padding-bottom:8px}
+.side a{white-space:nowrap;padding:8px 12px;border-radius:10px;color:var(--ink2);text-decoration:none;font-size:14px}
+.side a.on{background:var(--navy);color:#fff}
+@media(min-width:900px){.shell{display:grid;grid-template-columns:200px 1fr;gap:24px}.side{flex-direction:column;border:none;position:sticky;top:10px}}
+.row{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--hair);align-items:center;flex-wrap:wrap}
+.row:first-child{border-top:none}
+.row .nm{font-weight:600}
+.row .dt{font-size:12px;color:var(--ink2)}
+.row .vl{font-weight:700;color:var(--navy)}
+.note{background:var(--gray);border-radius:12px;padding:12px;font-size:13px;color:var(--ink2);margin:10px 0}
+.warn{background:#fff8ec;border-radius:12px;padding:12px;font-size:13px;color:#7a5a00;margin:10px 0}
+.err{background:#fbe9e7;border-radius:12px;padding:12px;font-size:13px;color:var(--red);margin:10px 0}
+.msg{white-space:pre-wrap;border:1px solid var(--hair);border-radius:12px;padding:12px;font-size:13px;background:var(--gray)}
+.score{text-align:center;padding:8px 0 14px}
+.score b{font-size:42px;color:var(--navy)}
+.score i{font-style:normal;font-size:19px;color:var(--ink2)}
+.score div{color:var(--teal);font-weight:700}
+.bar{height:26px;background:var(--tealsoft);border-radius:8px;position:relative;margin:6px 0}
+.bar i{position:absolute;inset:0;inset-inline-end:auto;background:var(--teal);border-radius:8px;opacity:.45}
+.bar span{position:absolute;inset-inline-start:8px;top:2px;font-size:12px;font-weight:700;color:var(--navy)}
+.bar em{position:absolute;inset-inline-end:8px;top:2px;font-size:12px;font-style:normal;color:var(--ink2)}
+.h1{font-size:24px;font-weight:800;color:var(--navy);margin:6px 0}
+.h2{font-size:18px;font-weight:700;color:var(--navy);margin:16px 0 4px}
+.muted{color:var(--ink2);font-size:13px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.ltr{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+@media print{.side,.no-print{display:none!important}body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const SUPABASE_URL = 'https://lrlwdktnlmfxhpwcnskn.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_nPTht0gtZDeKzJH1J4NpTA_Pfb-jbam';
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById('app');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mmss = s => Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+const normAr = t => String(t ?? '').replace(/[ً-ْٰ]/g,'').replace(/ـ/g,'').replace(/[أإآ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه').replace(/\s+/g,' ').trim().toLowerCase();
+const waLink = (phone, text) => 'https://wa.me/' + String(phone||'').replace(/\D/g,'').replace(/^0/, '20').replace(/^0020/, '20') + '?text=' + encodeURIComponent(text);
+const token6 = () => { const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const r=crypto.getRandomValues(new Uint32Array(6)); return [...r].map(x=>a[x%32]).join(''); };
+const newtok = () => token6() + token6(); // 12-char one-time code
+
+function hashSeed(str){let h=2166136261>>>0;for(const ch of String(str)){h^=ch.codePointAt(0);h=Math.imul(h,16777619)>>>0}return h>>>0}
+function mulberry32(a){return function(){a|=0;a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296}}
+function shuffleSeeded(arr,rng){const a=arr.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));const t=a[i];a[i]=a[j];a[j]=t}return a}
+function buildSession(qs, shq, shc, seedStr){
+  const rng=mulberry32(hashSeed('EXS:'+seedStr));
+  let order=qs.map((q,i)=>i); if(shq) order=shuffleSeeded(order,rng);
+  return order.map(srcIdx=>{const q=qs[srcIdx];let choices=q.choices||null,correctMap=null;
+    if((q.type==='mcq'||q.type==='tf')&&shc&&choices){const idx=choices.map((_,i)=>i);const sh=shuffleSeeded(idx,rng);correctMap=sh;choices=sh.map(i=>q.choices[i]);}
+    return{srcIdx,...q,choices,correctMap};});
+}
+
+let studentState = null; // {sessionId, student, exam, questions, session(shuffled), answers, timerIv, endAt}
+
+function render(html){ app.innerHTML = html; window.scrollTo(0,0); }
+function on(sel, ev, fn){ app.querySelectorAll(sel).forEach(el => el.addEventListener(ev, fn)); }
+const val = sel => { const el = app.querySelector(sel); return el ? el.value : ''; };
+
+// ============ STUDENT ============
+function studentLanding(err){
+  render(`
+  <div class="card">
+    <div class="h1">بوابة الامتحانات</div>
+    <p class="muted">اكتب الكود اللي المدرس بعتهولك عشان تدخل امتحانك.</p>
+    <label>كود الامتحان</label>
+    <input type="text" id="code" class="ltr" placeholder="مثال: K7QX2MB4TP9W" autocomplete="off">
+    ${err ? `<div class="err">${esc(err)}</div>` : ''}
+    <div class="actions"><button class="btn btn-p" id="go">دخول</button></div>
+  </div>
+  <div class="card">
+    <div class="h2">إزاي بتمشي الأمور؟</div>
+    <ol class="muted">
+      <li>المدرس يبعتلك كود خاص بيك أنت بس، بيشتغل مرة واحدة.</li>
+      <li>تكتب الكود هنا، تشوف بيانات الامتحان، وتبدأ لما تكون جاهز.</li>
+      <li>الامتحان بيفتح في صفحة لوحده بتايمر بيسلّم تلقائي لما الوقت يخلص.</li>
+      <li>إجاباتك بتتحفظ على السيرفر أول بأول، حتى لو الصفحة اتقفلت بتكمل من مكانك.</li>
+    </ol>
+  </div>
+  <div class="card"><div class="muted">إنت المدرس؟ <a href="#/teacher/login">سجّل دخولك من هنا</a></div></div>`);
+  on('#go','click', async () => {
+    const code = val('#code').trim().toUpperCase().replace(/\s/g,'');
+    if (!code) return studentLanding('اكتب الكود الأول.');
+    const { data, error } = await sb.rpc('redeem_code', { p_token: code });
+    if (error || !data || !data.ok) {
+      const m = { invalid_code:'الكود ده مش مظبوط. تأكد إنك كاتبه زي ما وصلك بالظبط.',
+        not_published:'الامتحان ده مش متاح حاليًا. كلم مدرسك.',
+        not_yet:'الامتحان لسه مفتحش في معاده.',
+        expired:'فترة الامتحان خلصت. كلم مدرسك.',
+        already_completed:'الكود ده اتستخدم وخلّص قبل كده. الكود بيشتغل مرة واحدة بس.' };
+      return studentLanding(m[data && data.error] || 'حصلت مشكلة، جرب تاني.');
+    }
+    const session = buildSession(data.questions, data.exam.shuffle_q, data.exam.shuffle_c, data.session_id);
+    const answers = {};
+    session.forEach(q => { const sv = data.saved[q.id]; answers[q.srcIdx] = sv === undefined ? null : sv; });
+    const endAt = new Date(data.exam.started_at).getTime() + data.exam.duration_min * 60000;
+    studentState = { sessionId: data.session_id, student: data.student, exam: data.exam, session, answers, endAt, idx: 0 };
+    location.hash = '#/exam';
+  });
+}
+
+function studentInfo(){
+  const s = studentState;
+  const totalPts = s.session.reduce((a,q)=>a+Number(q.points),0);
+  const resumed = s.session.some((q,i)=>s.answers[i]!==null);
+  render(`
+  <div class="topbar"><div><div class="t1">${esc(s.exam.title)}</div><div class="t2">${esc(s.exam.subject||'')}</div></div></div>
+  <div class="card">
+    <div class="h2">أهلًا يا ${esc(s.student)}</div>
+    ${resumed ? '<div class="note">لقينا إجابات محفوظة ليك من جلسة سابقة، هتكمل من مكانك.</div>' : ''}
+    <div class="cards">
+      <div class="scard"><b>${s.session.length}</b><span>سؤال</span></div>
+      <div class="scard"><b>${totalPts}</b><span>إجمالي الدرجات</span></div>
+      <div class="scard"><b>${s.exam.duration_min} دقيقة</b><span>المدة</span></div>
+      <div class="scard"><b>${s.exam.pass_pct}%</b><span>درجة النجاح</span></div>
+    </div>
+    <ol class="muted">
+      <li>التايمر شغال من أول ما فتحت الامتحان (${s.exam.duration_min} دقيقة)، ولو الوقت خلص الامتحان بيتسلّم لوحده.</li>
+      <li>إجاباتك بتتحفظ على السيرفر مع كل إجابة.</li>
+      <li>تقدر تتنقل بين الأسئلة بحرية من أرقام الأسئلة فوق.</li>
+    </ol>
+    <div class="actions"><button class="btn btn-p" id="start">${resumed ? 'كمّل الامتحان' : 'ابدأ الامتحان'}</button></div>
+  </div>`);
+  on('#start','click', () => { location.hash = '#/exam/q'; });
+}
+
+async function saveAnswer(qid, value){
+  try { await sb.rpc('save_answer', { p_session: studentState.sessionId, p_question: qid, p_answer: value }); } catch(e){}
+}
+let saveTimer = null;
+function saveAnswerDebounced(qid, value){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveAnswer(qid, value), 700);
+}
+
+function studentExam(){
+  const s = studentState;
+  const q = s.session[s.idx];
+  const ans = s.answers[q.srcIdx];
+  const answered = s.session.filter((x,i)=>s.answers[i]!==null&&s.answers[i]!=='').length;
+  const timeLeft = Math.max(0, Math.round((s.endAt - Date.now())/1000));
+  render(`
+  <div class="topbar">
+    <div><div class="t1">${esc(s.exam.title)}</div><div class="t2">${esc(s.student)}</div></div>
+    <div class="timer ${timeLeft<=60?'low':''}" id="timer">${mmss(timeLeft)}</div>
+  </div>
+  <div class="qnav">${s.session.map((x,i)=>`<button class="${s.answers[i]!==null&&s.answers[i]!==''?'done':''} ${i===s.idx?'cur':''}" data-nav="${i}">${i+1}</button>`).join('')}</div>
+  <div class="card">
+    <div class="muted">سؤال ${s.idx+1} من ${s.session.length} ${q.type==='essay'?'· مقالي':q.type==='sa'?'· إجابة قصيرة':''} · الدرجة: ${q.points}</div>
+    <p style="font-size:17px;font-weight:600">${esc(q.text)}</p>
+    ${(q.type==='mcq'||q.type==='tf') ? q.choices.map((c,ci)=>`<button class="choice ${ans===q.correctMap[ci]?'sel':''}" data-choice="${q.correctMap[ci]}">${esc(c)}</button>`).join('') : ''}
+    ${q.type==='sa' ? `<input type="text" id="sa" placeholder="اكتب إجابتك هنا" value="${esc(ans??'')}" autocomplete="off">` : ''}
+    ${q.type==='essay' ? `<textarea id="essay" placeholder="اكتب إجابتك بالتفصيل" style="min-height:140px">${esc(ans??'')}</textarea>` : ''}
+  </div>
+  <div class="actions">
+    <button class="btn btn-s btn-sm" id="prev" ${s.idx===0?'disabled':''}>السابق</button>
+    <button class="btn btn-s btn-sm" id="next" ${s.idx===s.session.length-1?'disabled':''}>التالي</button>
+    <button class="btn btn-p" id="submit">تسليم الامتحان</button>
+  </div>
+  <div class="muted" style="margin-top:8px">إجاباتك بتتحفظ تلقائيًا (${answered} من ${s.session.length} متجاوب عليها). التسليم التلقائي شغال عند انتهاء الوقت.</div>`);
+  on('[data-nav]','click', e => { s.idx = +e.target.dataset.nav; studentExam(); });
+  on('[data-choice]','click', e => {
+    const orig = +e.target.dataset.choice;
+    s.answers[q.srcIdx] = orig;
+    saveAnswer(q.id, orig);
+    studentExam();
+  });
+  const sa = app.querySelector('#sa'); if (sa) sa.addEventListener('input', () => { s.answers[q.srcIdx] = sa.value; saveAnswerDebounced(q.id, sa.value); });
+  const es = app.querySelector('#essay'); if (es) es.addEventListener('input', () => { s.answers[q.srcIdx] = es.value; saveAnswerDebounced(q.id, es.value); });
+  on('#prev','click', () => { if (s.idx>0){ s.idx--; studentExam(); } });
+  on('#next','click', () => { if (s.idx<s.session.length-1){ s.idx++; studentExam(); } });
+  on('#submit','click', () => confirmSubmit());
+  startTick();
+}
+
+function startTick(){
+  clearInterval(studentState.timerIv);
+  studentState.timerIv = setInterval(() => {
+    const s = studentState;
+    if (!s) return clearInterval(studentState.timerIv);
+    const left = Math.round((s.endAt - Date.now())/1000);
+    const t = app.querySelector('#timer');
+    if (t){ t.textContent = mmss(Math.max(0,left)); if (left<=60) t.classList.add('low'); }
+    if (left <= 0){ clearInterval(s.timerIv); doSubmit(true); }
+  }, 1000);
+}
+
+function confirmSubmit(){
+  const s = studentState;
+  const missing = s.session.filter((x,i)=>s.answers[i]===null||s.answers[i]==='').length;
+  const card = document.createElement('div');
+  card.className = 'card'; card.id = 'confirm';
+  card.innerHTML = `<div class="h2">متأكد إنك عايز تسلّم؟</div>
+    <div class="warn">${missing ? 'لسه في '+missing+' سؤال من غير إجابة، وهيتحسبوا غلط. ' : 'كل الأسئلة متجاوب عليها. '}بعد التسليم مش هتقدر تعدّل أي حاجة.</div>
+    <div class="actions"><button class="btn btn-p" id="yes">تأكيد التسليم</button><button class="btn btn-g" id="no">رجوع أكمّل</button></div>`;
+  app.appendChild(card); card.scrollIntoView({behavior:'smooth'});
+  card.querySelector('#yes').onclick = () => doSubmit(false);
+  card.querySelector('#no').onclick = () => card.remove();
+}
+
+async function doSubmit(auto){
+  const s = studentState;
+  clearInterval(s.timerIv);
+  const timeSec = Math.min(s.exam.duration_min*60, Math.round((Date.now() - (s.endAt - s.exam.duration_min*60000))/1000));
+  const { data, error } = await sb.rpc('submit_exam', { p_session: s.sessionId, p_time_sec: timeSec, p_auto: auto });
+  if (error || !data || !data.ok){
+    if (data && data.error === 'already_submitted'){ location.hash = '#/done'; studentDone({already:true}); return; }
+    render('<div class="card"><div class="err">حصلت مشكلة في التسليم. جرب تاني.</div><div class="actions"><button class="btn btn-p" id="r">إعادة المحاولة</button></div></div>');
+    on('#r','click', () => doSubmit(auto)); return;
+  }
+  studentState.result = data;
+  location.hash = '#/done';
+  studentDone();
+}
+
+function studentDone(opts){
+  const s = studentState;
+  const r = (opts && opts.already) ? null : s.result;
+  const pct = r && r.total ? Math.round(r.score*1000/r.total)/10 : 0;
+  render(`
+  <div class="topbar"><div><div class="t1">${esc(s.exam.title)}</div><div class="t2">تم التسليم</div></div></div>
+  <div class="card">
+    <div class="h2">خلصت الامتحان</div>
+    ${!r ? '<div class="note">الامتحان ده اتسلّم قبل كده.</div>' : (r.show ? `
+      <div class="score"><b>${r.score}</b><i>/${r.total}</i><div>${pct}%</div></div>
+      <div class="cards">
+        <div class="scard"><b>${r.correct}</b><span>إجابة صح</span></div>
+        <div class="scard"><b>${r.n_auto - r.correct}</b><span>غلط أو فاضي</span></div>
+      </div>
+      ${r.essay_pending ? '<div class="note">الامتحان فيه أسئلة مقالية، المدرس هيصححها ودرجتها هتضاف للنتيجة النهائية.</div>' : ''}
+    ` : '<div class="note">تم التسليم بنجاح. نتيجتك هتوصلك من المدرس بعد التصحيح.</div>')}
+  </div>`);
+}
+
+// ============ TEACHER ============
+const NAV = [['#/teacher','لوحة التحكم'],['#/teacher/exams','الامتحانات'],['#/teacher/new','امتحان جديد'],['#/teacher/students','الطلبة'],['#/teacher/codes','الأكواد'],['#/teacher/results','النتايج'],['#/teacher/analytics','التحليلات'],['#/teacher/reports','تقارير أولياء الأمور'],['#/teacher/settings','الإعدادات']];
+let profileCache = null;
+
+async function requireTeacher(){
+  const { data } = await sb.auth.getUser();
+  if (!data.user) { location.hash = '#/teacher/login'; return null; }
+  return data.user;
+}
+async function getProfile(uid){
+  if (profileCache) return profileCache;
+  const { data } = await sb.from('profiles').select('*').eq('id', uid).maybeSingle();
+  profileCache = data || { display_name:'', phone:'', default_pass_pct:50, default_duration:15 };
+  return profileCache;
+}
+function teacherShell(active, inner){
+  render(`<div class="shell"><nav class="side">${NAV.map(([h,l])=>`<a href="${h}" class="${h===active?'on':''}">${l}</a>`).join('')}
+    <a href="#" id="logout" style="color:var(--red)">خروج</a></nav><div>${inner}</div></div>`);
+  on('#logout','click', async e => { e.preventDefault(); profileCache=null; await sb.auth.signOut(); location.hash='#/teacher/login'; });
+}
+
+function teacherLogin(err){
+  render(`<div class="card" style="max-width:440px;margin:40px auto">
+    <div class="h1">دخول المدرس</div>
+    <p class="muted">سجّل دخولك بحسابك، أو اعمل حساب جديد أول مرة.</p>
+    <label>البريد الإلكتروني</label><input type="email" id="em" autocomplete="username">
+    <label>كلمة السر</label><input type="password" id="pw" autocomplete="current-password">
+    ${err?`<div class="err">${esc(err)}</div>`:''}
+    <div class="actions">
+      <button class="btn btn-p" id="in">دخول</button>
+      <button class="btn btn-s" id="up">حساب جديد</button>
+    </div>
+    <div class="note">أول مرة تعمل حساب، ممكن يوصلك إيميل تأكيد من Supabase - افتحه واضغط اللينك وبعدين سجّل دخول.</div>
+  </div>`);
+  on('#in','click', async () => {
+    const { error } = await sb.auth.signInWithPassword({ email: val('#em').trim(), password: val('#pw') });
+    if (error) return teacherLogin('بيانات الدخول مش مظبوطة، أو الإيميل لسه متأكدش.');
+    location.hash = '#/teacher';
+  });
+  on('#up','click', async () => {
+    const { error } = await sb.auth.signUp({ email: val('#em').trim(), password: val('#pw') });
+    if (error) return teacherLogin(error.message);
+    teacherLogin('الحساب اتعمل. لو وصلك إيميل تأكيد افتحه الأول، وبعدين سجّل دخول.');
+  });
+}
+
+async function tDashboard(){
+  const u = await requireTeacher(); if (!u) return;
+  const [exams, students, subs] = await Promise.all([
+    sb.from('exams').select('id,published'),
+    sb.from('students').select('id'),
+    sb.from('submissions').select('auto_score,auto_total,submitted_at,session_id'),
+  ]);
+  const ex = exams.data||[], st = students.data||[], su = subs.data||[];
+  const avg = su.length ? Math.round(su.reduce((a,s)=>a+(s.auto_total?s.auto_score*100/s.auto_total:0),0)/su.length) : 0;
+  const inner = `
+    <div class="h1">منصة الامتحانات</div>
+    <div class="cards">
+      <div class="scard"><b>${ex.length}</b><span>امتحانات</span></div>
+      <div class="scard"><b>${ex.filter(e=>e.published).length}</b><span>منشور</span></div>
+      <div class="scard"><b>${st.length}</b><span>طلبة</span></div>
+      <div class="scard"><b>${su.length}</b><span>تسليمات</span></div>
+      <div class="scard"><b>${su.length?avg+'%':'—'}</b><span>متوسط (تلقائي)</span></div>
+    </div>
+    <div class="card"><div class="actions">
+      <a class="btn btn-p btn-sm" href="#/teacher/new">امتحان جديد</a>
+      <a class="btn btn-s btn-sm" href="#/teacher/students">سجّل الطلبة</a>
+      <a class="btn btn-s btn-sm" href="#/teacher/codes">الأكواد</a>
+    </div></div>`;
+  teacherShell('#/teacher', inner);
+}
+
+async function tExams(){
+  const u = await requireTeacher(); if (!u) return;
+  const { data: ex } = await sb.from('exams').select('*, questions(count), codes(count)').order('created_at', {ascending:false});
+  const rows = (ex||[]).map(e => `
+    <div class="row"><div>
+      <div class="nm">${esc(e.title)} ${e.published?'<span class="chip c-done">منشور</span>':'<span class="chip c-new">مسودة</span>'}</div>
+      <div class="dt">${esc([e.subject,e.grade].filter(Boolean).join(' · ')||'بدون مادة')} · ${e.questions[0].count} سؤال · ${e.duration_min} دقيقة · ${e.codes[0].count} كود</div>
+    </div><div class="actions" style="margin:0">
+      <a class="btn btn-s btn-sm" href="#/teacher/edit/${e.id}">تعديل</a>
+      <a class="btn btn-s btn-sm" href="#/teacher/codes/${e.id}">الأكواد</a>
+      <button class="btn btn-g btn-sm" data-pub="${e.id}" data-v="${e.published?0:1}">${e.published?'إيقاف النشر':'انشر'}</button>
+      <button class="btn btn-g btn-sm" data-del="${e.id}">حذف</button>
+    </div></div>`).join('');
+  teacherShell('#/teacher/exams', `<div class="h1">الامتحانات</div>
+    ${ex && ex.length ? `<div class="card">${rows}</div>` : '<div class="note">مفيش امتحانات لسه.</div>'}
+    <div class="actions"><a class="btn btn-p" href="#/teacher/new">امتحان جديد</a></div>
+    <div class="note">النشر بيفتح توليد الأكواد وبيخلي الامتحان متاح للطلبة. أي كود بيتتحقق على السيرفر وقت الاستخدام.</div>`);
+  on('[data-pub]','click', async e => {
+    await sb.from('exams').update({published: e.target.dataset.v==='1'}).eq('id', e.target.dataset.pub);
+    tExams();
+  });
+  on('[data-del]','click', async e => {
+    if (e.target.dataset.confirm){ await sb.from('exams').delete().eq('id', e.target.dataset.del); tExams(); }
+    else { e.target.dataset.confirm = '1'; e.target.textContent = 'متأكد؟ اضغط للحذف النهائي'; }
+  });
+}
+
+let draft = null; // builder state
+function blankQ(){ return { text:'', type:'mcq', choices:['',''], correct:0, acceptedText:'', points:1 }; }
+
+async function tBuilder(editId){
+  const u = await requireTeacher(); if (!u) return;
+  const p = await getProfile(u.id);
+  if (editId && (!draft || draft.id !== editId)){
+    const { data: e } = await sb.from('exams').select('*, questions(*)').eq('id', editId).single();
+    if (!e) { location.hash = '#/teacher/exams'; return; }
+    draft = { id: e.id, title: e.title, subject: e.subject, grade: e.grade, description: e.description,
+      durationMin: e.duration_min, passPct: e.pass_pct, startAt: e.start_at ? e.start_at.slice(0,16) : '', endAt: e.end_at ? e.end_at.slice(0,16) : '',
+      shuffleQ: e.shuffle_q, shuffleC: e.shuffle_c, showResult: e.show_result, published: e.published,
+      qs: e.questions.sort((a,b)=>a.ord-b.ord).map(q => ({ text:q.text, type:q.type, choices:q.choices&&q.choices.length?q.choices:['',''], correct:q.correct||0, acceptedText:(q.accepted||[]).join('\n'), points:q.points })) };
+  }
+  if (!editId && (!draft || draft.id)) draft = null;
+  if (!draft) draft = { id:null, title:'', subject:'', grade:'', description:'', durationMin:p.default_duration||15, passPct:p.default_pass_pct||50, startAt:'', endAt:'', shuffleQ:true, shuffleC:true, showResult:true, published:false, qs:[] };
+  const d = draft;
+  const qHtml = d.qs.map((q,i)=>`
+    <div class="card">
+      <div class="row"><div class="nm">سؤال ${i+1}</div>
+        <select data-qtype="${i}">
+          <option value="mcq" ${q.type==='mcq'?'selected':''}>اختياري</option>
+          <option value="tf" ${q.type==='tf'?'selected':''}>صح وخطأ</option>
+          <option value="sa" ${q.type==='sa'?'selected':''}>إجابة قصيرة</option>
+          <option value="essay" ${q.type==='essay'?'selected':''}>مقالي (تصحيح يدوي)</option>
+        </select></div>
+      <textarea data-qtext="${i}" placeholder="اكتب نص السؤال">${esc(q.text)}</textarea>
+      ${q.type==='mcq' ? `
+        <label>الاختيارات</label>
+        ${q.choices.map((c,ci)=>`<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input type="radio" name="correct-${i}" data-qcorrect="${i}" value="${ci}" ${q.correct===ci?'checked':''} title="الإجابة الصحيحة">
+          <input type="text" data-qchoice="${i}:${ci}" value="${esc(c)}" placeholder="اختيار ${ci+1}">
+          ${q.choices.length>2?`<button class="btn btn-g btn-sm" data-qchoicedel="${i}:${ci}">×</button>`:''}
+        </div>`).join('')}
+        ${q.choices.length<6?`<div class="actions"><button class="btn btn-s btn-sm" data-qchoiceadd="${i}">أضف اختيار</button></div>`:''}
+        <div class="muted">حدد دايرة الاختيار الصحيح.</div>` : ''}
+      ${q.type==='tf' ? `<label>الإجابة الصحيحة</label>
+        <select data-qtf="${i}"><option value="0" ${q.correct===0?'selected':''}>صح</option><option value="1" ${q.correct===1?'selected':''}>خطأ</option></select>` : ''}
+      ${q.type==='sa' ? `<label>الإجابات المقبولة (كل إجابة في سطر)</label>
+        <textarea data-qacc="${i}" placeholder="المشتري&#10;كوكب المشتري">${esc(q.acceptedText)}</textarea>` : ''}
+      ${q.type==='essay' ? '<div class="note">السؤال ده بيتصحح يدويًا من صفحة النتايج بعد ما الطالب يسلّم.</div>' : ''}
+      <label>درجة السؤال</label>
+      <select data-qpoints="${i}">${[1,2,3,5,10].map(n=>`<option value="${n}" ${q.points===n?'selected':''}>${n}</option>`).join('')}</select>
+      <div class="actions">
+        <button class="btn btn-g btn-sm" data-qup="${i}">فوق</button>
+        <button class="btn btn-g btn-sm" data-qdown="${i}">تحت</button>
+        <button class="btn btn-g btn-sm" data-qdel="${i}">احذف السؤال</button>
+      </div>
+    </div>`).join('');
+  teacherShell('#/teacher/new', `
+    <div class="h1">${d.id ? 'تعديل الامتحان' : 'امتحان جديد'}</div>
+    <div class="card">
+      <label>اسم الامتحان</label><input type="text" id="f-title" value="${esc(d.title)}">
+      <label>المادة</label><input type="text" id="f-subject" value="${esc(d.subject)}">
+      <label>الصف / الفصل</label><input type="text" id="f-grade" value="${esc(d.grade)}">
+      <label>وصف قصير (اختياري)</label><input type="text" id="f-desc" value="${esc(d.description)}">
+      <label>مدة الامتحان بالدقائق</label><input type="number" id="f-dur" value="${d.durationMin}" min="1">
+      <label>نسبة النجاح %</label><input type="number" id="f-pass" value="${d.passPct}" min="1" max="100">
+      <label>متاح من (اختياري)</label><input type="datetime-local" id="f-start" value="${esc(d.startAt)}">
+      <label>متاح لحد (اختياري)</label><input type="datetime-local" id="f-end" value="${esc(d.endAt)}">
+      <label>ترتيب عشوائي للأسئلة</label><select id="f-shq"><option value="1" ${d.shuffleQ?'selected':''}>أيوه</option><option value="0" ${!d.shuffleQ?'selected':''}>لأ</option></select>
+      <label>ترتيب عشوائي للاختيارات</label><select id="f-shc"><option value="1" ${d.shuffleC?'selected':''}>أيوه</option><option value="0" ${!d.shuffleC?'selected':''}>لأ</option></select>
+      <label>الطالب يشوف نتيجته بعد التسليم</label><select id="f-show"><option value="1" ${d.showResult?'selected':''}>أيوه</option><option value="0" ${!d.showResult?'selected':''}>لأ</option></select>
+    </div>
+    ${qHtml}
+    <div class="card"><div id="berr"></div><div class="actions">
+      <button class="btn btn-s" id="addq">أضف سؤال</button>
+      <button class="btn btn-p" id="save">${d.id?'احفظ التعديلات':'احفظ الامتحان'}</button>
+    </div></div>`);
+  const syncDraft = () => {
+    d.title = val('#f-title'); d.subject = val('#f-subject'); d.grade = val('#f-grade'); d.description = val('#f-desc');
+    d.durationMin = +val('#f-dur')||15; d.passPct = +val('#f-pass')||50;
+    d.startAt = val('#f-start'); d.endAt = val('#f-end');
+    d.shuffleQ = val('#f-shq')==='1'; d.shuffleC = val('#f-shc')==='1'; d.showResult = val('#f-show')==='1';
+    d.qs.forEach((q,i)=>{
+      const t = app.querySelector(`[data-qtext="${i}"]`); if (t) q.text = t.value;
+      const ty = app.querySelector(`[data-qtype="${i}"]`); if (ty) q.type = ty.value;
+      const acc = app.querySelector(`[data-qacc="${i}"]`); if (acc) q.acceptedText = acc.value;
+      const tf = app.querySelector(`[data-qtf="${i}"]`); if (tf) q.correct = +tf.value;
+      const pts = app.querySelector(`[data-qpoints="${i}"]`); if (pts) q.points = +pts.value;
+      q.choices = q.choices.map((c,ci)=>{ const el = app.querySelector(`[data-qchoice="${i}:${ci}"]`); return el ? el.value : c; });
+      const rc = app.querySelector(`[data-qcorrect="${i}"]:checked`); if (rc) q.correct = +rc.value;
+    });
+  };
+  on('#addq','click', () => { syncDraft(); d.qs.push(blankQ()); tBuilderKeep(); });
+  on('[data-qtype]','change', () => { syncDraft(); tBuilderKeep(); });
+  on('[data-qchoiceadd]','click', e => { syncDraft(); d.qs[+e.target.dataset.qchoiceadd].choices.push(''); tBuilderKeep(); });
+  on('[data-qchoicedel]','click', e => { syncDraft(); const [i,ci] = e.target.dataset.qchoicedel.split(':').map(Number);
+    const q = d.qs[i]; q.choices.splice(ci,1); if (q.correct>=q.choices.length) q.correct=0; tBuilderKeep(); });
+  on('[data-qup]','click', e => { syncDraft(); const i=+e.target.dataset.qup; if(i>0){[d.qs[i-1],d.qs[i]]=[d.qs[i],d.qs[i-1]];} tBuilderKeep(); });
+  on('[data-qdown]','click', e => { syncDraft(); const i=+e.target.dataset.qdown; if(i<d.qs.length-1){[d.qs[i+1],d.qs[i]]=[d.qs[i],d.qs[i+1]];} tBuilderKeep(); });
+  on('[data-qdel]','click', e => { syncDraft(); d.qs.splice(+e.target.dataset.qdel,1); tBuilderKeep(); });
+  on('#save','click', async () => {
+    syncDraft();
+    const err = validateDraft(d);
+    if (err){ app.querySelector('#berr').innerHTML = `<div class="err">${esc(err)}</div>`; return; }
+    const examRow = { teacher_id: u.id, title: d.title.trim(), subject: d.subject.trim(), grade: d.grade.trim(), description: d.description.trim(),
+      duration_min: d.durationMin, pass_pct: d.passPct,
+      start_at: d.startAt ? new Date(d.startAt).toISOString() : null, end_at: d.endAt ? new Date(d.endAt).toISOString() : null,
+      shuffle_q: d.shuffleQ, shuffle_c: d.shuffleC, show_result: d.showResult };
+    let examId = d.id;
+    if (examId){
+      const { error } = await sb.from('exams').update(examRow).eq('id', examId);
+      if (error){ app.querySelector('#berr').innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+      await sb.from('questions').delete().eq('exam_id', examId);
+    } else {
+      const { data: ins, error } = await sb.from('exams').insert(examRow).select('id').single();
+      if (error){ app.querySelector('#berr').innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+      examId = ins.id;
+    }
+    const qRows = d.qs.map((q,i)=>({ exam_id: examId, ord: i, text: q.text.trim(), type: q.type,
+      choices: q.type==='tf' ? ['صح','خطأ'] : (q.type==='mcq' ? q.choices.map(c=>c.trim()) : null),
+      correct: (q.type==='mcq'||q.type==='tf') ? q.correct : null,
+      accepted: q.type==='sa' ? q.acceptedText.split('\n').map(s=>s.trim()).filter(Boolean) : null,
+      points: q.points }));
+    const { error: qe } = await sb.from('questions').insert(qRows);
+    if (qe){ app.querySelector('#berr').innerHTML = `<div class="err">${esc(qe.message)}</div>`; return; }
+    draft = null;
+    location.hash = '#/teacher/exams';
+  });
+  function tBuilderKeep(){ location.hash = editId ? '#/teacher/edit/'+editId : '#/teacher/new'; renderBuilderAgain(); }
+  function renderBuilderAgain(){ tBuilder(editId); }
+}
+
+function validateDraft(d){
+  if (!d.title.trim()) return 'اكتب اسم الامتحان الأول.';
+  if (!d.qs.length) return 'أضف سؤال واحد على الأقل.';
+  for (let i=0;i<d.qs.length;i++){
+    const q = d.qs[i];
+    if (!q.text.trim()) return 'سؤال '+(i+1)+' من غير نص.';
+    if (q.type==='mcq'){
+      if (q.choices.filter(c=>c.trim()).length<2) return 'سؤال '+(i+1)+' محتاج اختيارين على الأقل.';
+      if (!(q.choices[q.correct]||'').trim()) return 'حدد الإجابة الصحيحة لسؤال '+(i+1)+'.';
+    }
+    if (q.type==='sa' && !q.acceptedText.split('\n').map(s=>s.trim()).filter(Boolean).length) return 'سؤال '+(i+1)+' (إجابة قصيرة) محتاج إجابة مقبولة واحدة على الأقل.';
+  }
+  return '';
+}
+
+async function tStudents(){
+  const u = await requireTeacher(); if (!u) return;
+  const { data: st } = await sb.from('students').select('*').order('created_at');
+  teacherShell('#/teacher/students', `
+    <div class="h1">الطلبة</div>
+    <div class="card">
+      <label>اسم الطالب</label><input type="text" id="s-name">
+      <label>رقم واتساب ولي الأمر (اختياري)</label><input type="text" id="s-phone">
+      <div id="serr"></div>
+      <div class="actions"><button class="btn btn-p" id="s-add">أضف الطالب</button></div>
+    </div>
+    ${st && st.length ? `<div class="card">${st.map(s=>`
+      <div class="row"><div><div class="nm">${esc(s.name)}</div><div class="dt">${s.parent_phone?'ولي الأمر: '+esc(s.parent_phone):'بدون رقم ولي أمر'}</div></div>
+      <button class="btn btn-g btn-sm" data-sdel="${s.id}">حذف</button></div>`).join('')}</div>` : '<div class="note">مفيش طلبة لسه.</div>'}`);
+  on('#s-add','click', async () => {
+    const name = val('#s-name').trim();
+    if (!name){ app.querySelector('#serr').innerHTML = '<div class="err">اكتب اسم الطالب.</div>'; return; }
+    await sb.from('students').insert({ teacher_id: u.id, name, parent_phone: val('#s-phone').trim() });
+    tStudents();
+  });
+  on('[data-sdel]','click', async e => { await sb.from('students').delete().eq('id', e.target.dataset.sdel); tStudents(); });
+}
+
+async function tCodes(examId){
+  const u = await requireTeacher(); if (!u) return;
+  const { data: exams } = await sb.from('exams').select('id,title,published').order('created_at',{ascending:false});
+  if (!exams || !exams.length){ location.hash = '#/teacher/new'; return; }
+  const exam = exams.find(e=>e.id===examId) || exams[0];
+  const { data: codes } = await sb.rpc('exam_code_status', { p_exam: exam.id });
+  const { data: st } = await sb.from('students').select('*').order('name');
+  const chipFor = s => s==='completed'?'<span class="chip c-done">مكتمل</span>':s==='in_progress'?'<span class="chip c-prog">قيد الحل دلوقتي</span>':'<span class="chip c-new">غير مستخدم</span>';
+  const base = location.origin + location.pathname;
+  teacherShell('#/teacher/codes', `
+    <div class="h1">الأكواد</div>
+    <label>الامتحان</label>
+    <select id="c-exam">${exams.map(e=>`<option value="${e.id}" ${e.id===exam.id?'selected':''}>${esc(e.title)}</option>`).join('')}</select>
+    ${!exam.published ? '<div class="warn">الامتحان ده مسودة. انشره من صفحة الامتحانات الأول عشان تولّد أكواد.</div>' : `
+    <div class="card">
+      <div class="h2">توليد أكواد</div>
+      <label>أسماء الطلبة (كل اسم في سطر)</label>
+      <textarea id="c-names" placeholder="أحمد محمد&#10;سارة علي"></textarea>
+      <div id="cerr"></div>
+      <div class="actions">
+        <button class="btn btn-p" id="c-gen">ولّد الأكواد</button>
+        <button class="btn btn-s" id="c-gen-all">ولّد لكل الطلبة المسجلين اللي ملهمش كود</button>
+      </div>
+    </div>`}
+    ${codes && codes.length ? `<div class="card"><div class="h2">أكواد: ${esc(exam.title)}</div>
+      ${codes.map(c=>{ const invite = 'أهلًا '+c.student_name+'، ده الكود بتاعك لامتحان "'+exam.title+'". افتح اللينك ده واكتب الكود عشان تبدأ: '+base+'\n\nالكود: '+c.token;
+        return `<div class="row"><div>
+        <div class="nm">${esc(c.student_name)} ${chipFor(c.status)}</div>
+        <div class="dt">كود: <span class="ltr">${c.token}</span>${c.started_at?' · بدأ '+new Date(c.started_at).toLocaleString('ar-EG'):''}${c.submitted_at?' · سلّم '+new Date(c.submitted_at).toLocaleString('ar-EG'):''}</div>
+      </div><div class="actions" style="margin:0">
+        <button class="btn btn-s btn-sm" data-copy="${esc(invite)}">نسخ الدعوة</button>
+        <a class="btn btn-s btn-sm" target="_blank" rel="noopener" href="${waLink('', invite)}">واتساب</a>
+      </div></div>`;}).join('')}
+    </div>` : '<div class="note">مفيش أكواد لسه للامتحان ده.</div>'}`);
+  on('#c-exam','change', () => { location.hash = '#/teacher/codes/' + val('#c-exam'); });
+  const gen = async names => {
+    if (!names.length){ app.querySelector('#cerr').innerHTML = '<div class="err">اكتب اسم واحد على الأقل.</div>'; return; }
+    const rows = names.map(n => ({ exam_id: exam.id, student_name: n, token: newtok(),
+      student_id: (st||[]).find(s=>s.name===n)?.id || null }));
+    const { error } = await sb.from('codes').insert(rows);
+    if (error){ app.querySelector('#cerr').innerHTML = `<div class="err">${esc(error.message)}</div>`; return; }
+    tCodes(exam.id);
+  };
+  on('#c-gen','click', () => gen(val('#c-names').split('\n').map(s=>s.trim()).filter(Boolean).filter(n=>!(codes||[]).some(c=>c.student_name===n))));
+  on('#c-gen-all','click', () => gen((st||[]).map(s=>s.name).filter(n=>!(codes||[]).some(c=>c.student_name===n))));
+  on('[data-copy]','click', e => {
+    const txt = e.target.dataset.copy;
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+      () => { e.target.textContent = 'اتنسخت'; setTimeout(()=>e.target.textContent='نسخ الدعوة',1500); },
+      () => { const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); e.target.textContent='اتنسخت'; setTimeout(()=>e.target.textContent='نسخ الدعوة',1500); });
+  });
+}
+
+async function loadSubmissions(){
+  const { data: subs } = await sb.from('submissions').select('*, exam_sessions(code_id, codes(token, student_name, exam_id, exams(id,title,subject,grade,pass_pct)))').order('submitted_at',{ascending:false});
+  return subs || [];
+}
+function flatSub(s){
+  const c = s.exam_sessions?.codes || {};
+  return { id: s.id, session_id: s.session_id, student: c.student_name||'—', token: c.token||'', examId: c.exams?.id||null,
+    title: c.exams?.title||'امتحان محذوف', subject: c.exams?.subject||'', grade: c.exams?.grade||'', passPct: c.exams?.pass_pct||50,
+    autoScore: s.auto_score, autoTotal: s.auto_total, cc: s.correct_count, nAuto: s.n_auto, bitmap: s.bitmap,
+    timeSec: s.time_sec, at: s.submitted_at };
+}
+
+async function tResults(){
+  const u = await requireTeacher(); if (!u) return;
+  const subs = (await loadSubmissions()).map(flatSub);
+  const { data: grades } = await sb.from('essay_grades').select('*');
+  const gmap = {}; (grades||[]).forEach(g => { (gmap[g.submission_id] = gmap[g.submission_id] || {})[g.question_id] = g.awarded; });
+  const finalOf = async s => s; // final computed below with essay max fetched lazily
+  teacherShell('#/teacher/results', `
+    <div class="h1">النتايج</div>
+    ${subs.length ? `<div class="card">${subs.map((s,i)=>`
+      <div class="row"><div>
+        <div class="nm">${esc(s.student)}</div>
+        <div class="dt">${esc(s.title)} · تلقائي: ${s.autoScore}/${s.autoTotal} · صح ${s.cc} من ${s.nAuto} · ${Math.round(s.timeSec/60)} دقيقة · ${new Date(s.at).toLocaleDateString('ar-EG')}</div>
+        <div class="dt" id="final-${s.id}">…</div>
+      </div><div class="actions" style="margin:0">
+        <button class="btn btn-s btn-sm" data-essays="${s.id}" data-exam="${s.examId}" data-session="${s.session_id}">المقالي</button>
+        <button class="btn btn-g btn-sm" data-rdel="${s.id}">حذف</button>
+      </div></div>`).join('')}</div>` : '<div class="note">مفيش نتايج لسه. أول ما الطلبة يسلّموا هتظهر هنا تلقائي - مفيش استيراد يدوي في النسخة دي.</div>'}
+    <div id="essaybox"></div>`);
+  // compute finals
+  for (const s of subs){
+    const { data: eqs } = await sb.from('questions').select('id,type,points,text').eq('exam_id', s.examId);
+    const essays = (eqs||[]).filter(q=>q.type==='essay');
+    const max = essays.reduce((a,q)=>a+Number(q.points),0);
+    const awarded = Object.values(gmap[s.id]||{}).reduce((a,b)=>a+Number(b),0);
+    const pending = essays.length && essays.some(q => gmap[s.id]?.[q.id] === undefined);
+    const score = s.autoScore + awarded, total = s.autoTotal + max;
+    const el = app.querySelector('#final-'+s.id);
+    if (el) el.innerHTML = `النهائي: <b>${score}/${total}</b> (${total?Math.round(score*1000/total)/10:0}%) ${pending?'<span class="chip c-new">مبدئي - في مقالي مستني</span>':'<span class="chip c-done">نهائي</span>'}`;
+  }
+  on('[data-essays]','click', async e => {
+    const box = app.querySelector('#essaybox');
+    const { data: eqs } = await sb.from('questions').select('id,text,points').eq('exam_id', e.target.dataset.exam).eq('type','essay').order('ord');
+    if (!eqs || !eqs.length){ box.innerHTML = '<div class="note">الامتحان ده مفيهوش أسئلة مقالية.</div>'; return; }
+    const subId = e.target.dataset.essays, sessionId = e.target.dataset.session;
+    const { data: ans } = await sb.from('answers').select('*').eq('session_id', sessionId);
+    const amap = {}; (ans||[]).forEach(a => amap[a.question_id] = a.answer);
+    const { data: gr } = await sb.from('essay_grades').select('*').eq('submission_id', subId);
+    const gm = {}; (gr||[]).forEach(g => gm[g.question_id] = g.awarded);
+    box.innerHTML = `<div class="card"><div class="h2">تصحيح المقالي</div>
+      ${eqs.map(q=>`<div class="card" style="background:var(--gray)">
+        <div class="nm">${esc(q.text)} (من ${q.points})</div>
+        <div class="msg">${esc(amap[q.id] ?? '(الطالب مكتبش إجابة)')}</div>
+        <label>الدرجة</label><input type="number" min="0" max="${q.points}" step="0.5" data-award="${q.id}" data-max="${q.points}" value="${gm[q.id] ?? ''}" style="max-width:120px">
+      </div>`).join('')}
+      <div class="actions"><button class="btn btn-p" id="save-grades">احفظ التصحيح</button></div><div id="gerr"></div></div>`;
+    box.scrollIntoView({behavior:'smooth'});
+    on('#save-grades','click', async () => {
+      const rows = [];
+      app.querySelectorAll('[data-award]').forEach(inp => {
+        if (inp.value === '') return;
+        const v = Math.max(0, Math.min(+inp.dataset.max, +inp.value || 0));
+        rows.push({ submission_id: subId, question_id: inp.dataset.award, awarded: v });
+      });
+      for (const r of rows) await sb.from('essay_grades').upsert(r);
+      tResults();
+    });
+  });
+  on('[data-rdel]','click', async e => {
+    if (e.target.dataset.confirm){ await sb.from('submissions').delete().eq('id', e.target.dataset.rdel); tResults(); }
+    else { e.target.dataset.confirm='1'; e.target.textContent='متأكد؟ اضغط للحذف'; }
+  });
+}
+
+async function tAnalytics(examId){
+  const u = await requireTeacher(); if (!u) return;
+  const { data: exams } = await sb.from('exams').select('id,title,pass_pct').order('created_at',{ascending:false});
+  const subs = (await loadSubmissions()).map(flatSub);
+  const withRes = (exams||[]).filter(e => subs.some(s=>s.examId===e.id));
+  if (!withRes.length){ teacherShell('#/teacher/analytics','<div class="h1">التحليلات</div><div class="note">مفيش بيانات لسه، أول ما تيجي نتايج هتظهر هنا.</div>'); return; }
+  const exam = withRes.find(e=>e.id===examId) || withRes[0];
+  const rows = subs.filter(s=>s.examId===exam.id);
+  const { data: eqs } = await sb.from('questions').select('id,text,type,points').eq('exam_id', exam.id).order('ord');
+  const auto = (eqs||[]).filter(q=>q.type!=='essay');
+  const { data: grades } = await sb.from('essay_grades').select('*');
+  const gsum = {}; (grades||[]).forEach(g => gsum[g.submission_id]=(gsum[g.submission_id]||0)+Number(g.awarded));
+  const essayMax = (eqs||[]).filter(q=>q.type==='essay').reduce((a,q)=>a+Number(q.points),0);
+  const finalPct = s => { const t = s.autoTotal + essayMax; return t ? Math.round((s.autoScore + (gsum[s.id]||0))*1000/t)/10 : 0; };
+  const pcts = rows.map(finalPct);
+  const avg = Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length);
+  const passRate = Math.round(pcts.filter(p=>p>=exam.pass_pct).length*100/pcts.length);
+  const qStats = auto.map((q,i)=>{
+    const att = rows.filter(r=>r.bitmap && r.bitmap.length>i);
+    const ok = att.filter(r=>r.bitmap[i]==='1').length;
+    return { ...q, pct: att.length ? Math.round(ok*100/att.length) : 0, n: att.length };
+  });
+  const ranked = rows.slice().sort((a,b)=>finalPct(b)-finalPct(a));
+  const missed = qStats.slice().sort((a,b)=>a.pct-b.pct).slice(0,3);
+  teacherShell('#/teacher/analytics', `
+    <div class="h1">التحليلات</div>
+    ${withRes.length>1?`<label>الامتحان</label><select id="a-exam">${withRes.map(e=>`<option value="${e.id}" ${e.id===exam.id?'selected':''}>${esc(e.title)}</option>`).join('')}</select>`:''}
+    <div class="cards">
+      <div class="scard"><b>${rows.length}</b><span>تسليم</span></div>
+      <div class="scard"><b>${avg}%</b><span>المتوسط</span></div>
+      <div class="scard"><b>${Math.max(...pcts)}%</b><span>أعلى درجة</span></div>
+      <div class="scard"><b>${Math.min(...pcts)}%</b><span>أقل درجة</span></div>
+      <div class="scard"><b>${passRate}%</b><span>نسبة النجاح</span></div>
+    </div>
+    <div class="card"><div class="h2">ترتيب الطلبة</div>
+      ${ranked.map((s,i)=>`<div class="row"><div><span class="muted">${i+1}.</span> <span class="nm">${esc(s.student)}</span></div><div class="vl">${finalPct(s)}%</div></div>`).join('')}
+    </div>
+    <div class="card"><div class="h2">صعوبة الأسئلة (نسبة الصح)</div>
+      ${qStats.map((q,i)=>`<div class="bar"><i style="width:${q.pct}%"></i><span>س${i+1}: ${esc(q.text.length>50?q.text.slice(0,49)+'…':q.text)}</span><em>${q.pct}% · ${q.n} محاولة</em></div>`).join('')}
+    </div>
+    <div class="card"><div class="h2">أكتر الأسئلة اللي الطلبة غلطوا فيها</div>
+      ${missed.map(q=>`<div class="row"><div class="nm">${esc(q.text.length>70?q.text.slice(0,69)+'…':q.text)}</div><div class="vl">${q.pct}% صح</div></div>`).join('') || '<div class="note">مفيش بيانات كفاية.</div>'}
+    </div>`);
+  on('#a-exam','change', () => { location.hash = '#/teacher/analytics/' + val('#a-exam'); });
+}
+
+async function tReports(){
+  const u = await requireTeacher(); if (!u) return;
+  const p = await getProfile(u.id);
+  const subs = (await loadSubmissions()).map(flatSub);
+  if (!subs.length){ teacherShell('#/teacher/reports','<div class="h1">تقارير أولياء الأمور</div><div class="note">مفيش نتايج لسه.</div>'); return; }
+  const { data: st } = await sb.from('students').select('name,parent_phone');
+  const phoneFor = n => (st||[]).find(s=>s.name===n)?.parent_phone || '';
+  const { data: grades } = await sb.from('essay_grades').select('*');
+  const gmap = {}; (grades||[]).forEach(g => { (gmap[g.submission_id]=gmap[g.submission_id]||{})[g.question_id]=Number(g.awarded); });
+  const reports = [];
+  for (const s of subs){
+    const { data: eqs } = await sb.from('questions').select('id,text,type,points').eq('exam_id', s.examId).order('ord');
+    const essays = (eqs||[]).filter(q=>q.type==='essay');
+    const essayMax = essays.reduce((a,q)=>a+Number(q.points),0);
+    const awarded = Object.values(gmap[s.id]||{}).reduce((a,b)=>a+b,0);
+    const pending = essays.length && essays.some(q=>gmap[s.id]?.[q.id]===undefined);
+    const score = s.autoScore + awarded, total = s.autoTotal + essayMax;
+    const pct = total ? Math.round(score*1000/total)/10 : 0;
+    const wrong = [];
+    (eqs||[]).filter(q=>q.type!=='essay').forEach((q,i)=>{ if (s.bitmap && s.bitmap[i]==='0') wrong.push(q.text); });
+    const level = pct>=85?'ممتاز':pct>=75?'جيد جدًا':pct>=65?'جيد':pct>=50?'مقبول':'ضعيف - يحتاج دعم';
+    const report = ['تقرير أداء الطالب: '+s.student,
+      'الامتحان: '+s.title+(s.subject?' ('+s.subject+')':''),
+      s.grade?'الصف: '+s.grade:'',
+      'التاريخ: '+new Date(s.at).toLocaleDateString('ar-EG')+' - الوقت المستغرق: '+Math.round(s.timeSec/60)+' دقيقة',
+      'الدرجة: '+score+' من '+total+' ('+pct+'%)'+(pending?' - مبدئية، في انتظار تصحيح المقالي':''),
+      'التقدير: '+level+(pct>=s.passPct?' - ناجح':' - لم يصل لدرجة النجاح ('+s.passPct+'%)'),
+      'إجابات صحيحة: '+s.cc+' - خاطئة أو بدون إجابة: '+(s.nAuto-s.cc),
+      wrong.length?'محتاج يراجع: '+wrong.slice(0,3).join(' | '):'مفيش نقاط ضعف واضحة في الأسئلة الموضوعية.',
+    ].filter(Boolean).join('\n');
+    reports.push({ s, report, pct, pending });
+  }
+  teacherShell('#/teacher/reports', `
+    <div class="h1">تقارير أولياء الأمور</div>
+    <div class="note">راجع التقرير واضغط "إرسال واتساب" - هيتفتح واتساب بالتقرير جاهز لولي الأمر. "طباعة / PDF" بيفتح نسخة للطباعة تقدر تحفظها PDF من المتصفح.</div><div class="warn">الإرسال الأوتوماتيك الكامل لتقارير أولياء الأمور: <b>غير متاح حاليًا</b>. لحد ما تتأكد قناة الإرسال والمستلم الصح وإذن الكشف، الإرسال يدوي بضغطة منك بعد مراجعة كل تقرير.</div>
+    ${reports.map((r,i)=>`<div class="card">
+      <div class="nm">${esc(r.s.student)} ${r.pending?'<span class="chip c-new">مبدئي</span>':'<span class="chip c-done">نهائي</span>'} <span class="muted">${esc(r.s.title)} · ${r.pct}%</span></div>
+      <div class="msg" id="rep-${i}" style="display:none;margin-top:8px">${esc(r.report)}</div>
+      <label>رقم واتساب ولي الأمر</label>
+      <input type="text" id="ph-${i}" value="${esc(phoneFor(r.s.student))}">
+      <div class="actions">
+        <button class="btn btn-s btn-sm" data-show="${i}">عرض / إخفاء التقرير</button>
+        <a class="btn btn-p btn-sm" target="_blank" rel="noopener" href="${waLink(phoneFor(r.s.student), r.report)}" id="wa-${i}">إرسال واتساب</a>
+        <button class="btn btn-s btn-sm" data-print="${i}">طباعة / PDF</button>
+      </div>
+    </div>`).join('')}`);
+  on('[data-show]','click', e => { const el = app.querySelector('#rep-'+e.target.dataset.show); el.style.display = el.style.display==='none'?'block':'none'; });
+  on('[data-print]','click', e => {
+    const i = +e.target.dataset.print;
+    const w = window.open('', '_blank');
+    w.document.write(`<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير</title><style>body{font-family:Tahoma;line-height:2;padding:30px;white-space:pre-wrap}</style></head><body>${esc(reports[i].report)}</body></html>`);
+    w.document.close(); w.focus(); w.print();
+  });
+  // keep wa link in sync with edited phone
+  reports.forEach((r,i)=>{
+    const inp = app.querySelector('#ph-'+i);
+    if (inp) inp.addEventListener('input', () => { app.querySelector('#wa-'+i).href = waLink(inp.value, r.report); });
+  });
+}
+
+async function tSettings(){
+  const u = await requireTeacher(); if (!u) return;
+  const p = await getProfile(u.id);
+  teacherShell('#/teacher/settings', `
+    <div class="h1">الإعدادات</div>
+    <div class="card">
+      <label>اسمك (بيظهر للطلبة وأولياء الأمور)</label><input type="text" id="p-name" value="${esc(p.display_name||'')}">
+      <label>رقم الواتساب بتاعك</label><input type="text" id="p-phone" value="${esc(p.phone||'')}">
+      <label>نسبة النجاح الافتراضية %</label><input type="number" id="p-pass" value="${p.default_pass_pct||50}">
+      <label>المدة الافتراضية بالدقائق</label><input type="number" id="p-dur" value="${p.default_duration||15}">
+      <div class="actions"><button class="btn btn-p" id="p-save">احفظ</button></div>
+      <div id="p-ok"></div>
+    </div>`);
+  on('#p-save','click', async () => {
+    const row = { id: u.id, display_name: val('#p-name').trim(), phone: val('#p-phone').trim(),
+      default_pass_pct: +val('#p-pass')||50, default_duration: +val('#p-dur')||15 };
+    await sb.from('profiles').upsert(row);
+    profileCache = row;
+    app.querySelector('#p-ok').innerHTML = '<div class="note">اتحفظت.</div>';
+  });
+}
+
+// ============ ROUTER ============
+async function route(){
+  const h = location.hash || '#/';
+  clearInterval(studentState?.timerIv);
+  if (h === '#/' || h === '#') return studentLanding();
+  if (h === '#/exam') return studentState ? studentInfo() : studentLanding();
+  if (h === '#/exam/q') return studentState ? studentExam() : studentLanding();
+  if (h === '#/done') return studentState ? studentDone() : studentLanding();
+  if (h === '#/teacher/login') return teacherLogin();
+  if (h === '#/teacher') return tDashboard();
+  if (h === '#/teacher/exams') return tExams();
+  if (h === '#/teacher/new') return tBuilder(null);
+  if (h.startsWith('#/teacher/edit/')) return tBuilder(h.split('/')[3]);
+  if (h === '#/teacher/students') return tStudents();
+  if (h.startsWith('#/teacher/codes')) return tCodes(h.split('/')[3]);
+  if (h === '#/teacher/results') return tResults();
+  if (h.startsWith('#/teacher/analytics')) return tAnalytics(h.split('/')[3]);
+  if (h === '#/teacher/reports') return tReports();
+  if (h === '#/teacher/settings') return tSettings();
+  studentLanding();
+}
+window.addEventListener('hashchange', route);
+if (SUPABASE_URL.startsWith('__')){
+  render('<div class="card"><div class="err">المنصة لسه متظبطتش: لازم تتحط قيم Supabase (SUPABASE_URL و SUPABASE_ANON_KEY) في أول ملف index.html. الخطوات في README.</div></div>');
+} else {
+  route();
+}
+</script>
+</body>
+</html>
