@@ -67,6 +67,49 @@ label{font-size:13px;color:var(--ink2);display:block;margin-top:12px}
 .answer-key{background:var(--tealsoft);border:1px solid var(--teal);border-radius:12px;padding:12px;margin-top:10px}.answer-pick{display:flex;gap:8px;align-items:center;margin:0;font-size:14px;color:var(--navy);min-height:44px}.answer-pick input{width:22px;height:22px;accent-color:var(--teal);flex-shrink:0}.flow{display:grid;gap:8px}.flow a{text-align:start}.ltr{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
 @media print{.side,.no-print{display:none!important}body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}
 .track-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.track-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.track-head strong{font-size:18px;overflow-wrap:anywhere}.track-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.track-metrics>div{background:var(--gray);border-radius:12px;padding:12px;min-width:0}.track-metrics span,.track-metrics small{display:block;font-size:12px;color:var(--ink2)}.track-metrics b{display:block;font-size:22px;color:var(--navy)}
+
+/* Student experience: light CSS-only decoration, never over the questions. */
+body.student-view{background:#f1f6fb;isolation:isolate}
+body.student-view::before,body.student-view::after{content:"";position:fixed;pointer-events:none;z-index:-1;border-radius:38px;opacity:.55;animation:study-float 12s ease-in-out infinite alternate}
+body.student-view::before{width:210px;height:210px;background:linear-gradient(135deg,#b8e4e1,#d9e7fb);top:70px;right:-105px;transform:rotate(25deg)}
+body.student-view::after{width:140px;height:140px;border:22px solid #d2dcf6;bottom:70px;left:-85px;animation-delay:-6s}
+@keyframes study-float{to{transform:translateY(18px) rotate(35deg)}}
+.student-view .wrap{max-width:860px;padding-bottom:32px}
+.student-view .card{border:1px solid #e1e9f1;box-shadow:0 6px 22px rgba(18,35,63,.04)}
+.student-hero{position:relative;overflow:hidden;background:linear-gradient(125deg,#142b4c,#21566b);color:#fff;border-radius:24px;padding:26px 24px;margin:16px 0 22px}
+.student-hero::after{content:"";position:absolute;width:130px;height:130px;border:1px solid #ffffff30;border-radius:28px;left:-38px;top:-35px;transform:rotate(24deg);pointer-events:none}
+.student-hero .h1{color:#fff;font-size:28px;margin:8px 0}
+.student-hero p{color:#e1eff4;margin:8px 0 0;font-size:14px;max-width:580px}
+.study-tag{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;letter-spacing:.2px}
+.study-tag i{width:8px;height:8px;border-radius:50%;background:#80d4c8}
+.study-art{font-size:26px;display:block;margin-bottom:12px;color:#a7e3dc;letter-spacing:8px;direction:ltr;text-align:right}
+.student-view .topbar{background:linear-gradient(115deg,#142b4c,#21566b);border-radius:20px}
+.student-view .topbar .t1{font-size:16px;overflow-wrap:anywhere}
+.student-view .timer{flex-shrink:0;direction:ltr;white-space:nowrap}
+.exam-progress{background:#fff;border:1px solid #e1e9f1;border-radius:18px;padding:16px;margin:14px 0 22px}
+.progress-label{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--ink2);margin-bottom:8px}
+.progress-label b{color:var(--teal)}
+.progress-track{height:6px;border-radius:20px;background:#e8eff3;overflow:hidden}
+.progress-track span{display:block;height:100%;background:var(--teal);border-radius:20px;transition:width .25s ease}
+.student-view .qnav{margin:14px 0 0;gap:8px}
+.student-view .qnav button{min-width:40px;height:40px}
+.question-card{scroll-margin-top:16px;border-top:3px solid #bdddda!important;position:relative}
+.question-heading{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+.question-number{display:grid;place-items:center;width:36px;height:36px;flex-shrink:0;border-radius:12px;background:#e8f3f3;color:#14777b;font-size:15px;font-weight:700}
+.question-card .question-text{font-size:17px;font-weight:600;overflow-wrap:anywhere;margin:10px 0 18px}
+.student-view .choice{display:flex;align-items:center;gap:10px;transition:background-color .15s,border-color .15s;min-height:50px}
+.choice-dot{width:19px;height:19px;border:1.5px solid #bcc9d5;border-radius:50%;flex-shrink:0;display:grid;place-items:center}
+.choice.sel .choice-dot{border:5px solid var(--teal);background:#fff}
+.choice-text{overflow-wrap:anywhere;min-width:0}
+.student-view :is(button,input,textarea):focus-visible{outline:3px solid #408ad1;outline-offset:3px}
+.exam-finish{border:1px solid #c9dddd!important;background:linear-gradient(130deg,#fff,#eff8f6);margin-top:28px!important;text-align:center;padding:24px 18px!important}
+.exam-finish .h2{margin-top:0}.exam-finish .btn{min-height:50px;width:100%;max-width:360px;margin-top:8px}
+.save-status{font-size:12px;color:var(--ink2);margin-top:10px;min-height:21px}
+#confirm{scroll-margin-top:16px;border:2px solid #c9dddd;animation:card-in .2s ease-out}
+@keyframes card-in{from{opacity:.5;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:420px){.student-hero{padding:24px 20px}.student-hero .h1{font-size:25px}.student-view .wrap{padding:12px}.student-view .card{padding:16px}.student-view .topbar{padding:14px}.question-heading .muted{font-size:12px}}
+@media(prefers-reduced-motion:reduce){.student-view::before,.student-view::after,.student-view .timer.low,#confirm{animation:none!important}.student-view *{scroll-behavior:auto!important;transition:none!important}}
+
 </style>
 </head>
 <body>
@@ -104,9 +147,16 @@ const val = sel => { const el = app.querySelector(sel); return el ? el.value : '
 
 // ============ STUDENT ============
 function studentLanding(err){
+  document.body.classList.add('student-view');
   render(`
+  <header class="student-hero">
+    <span class="study-art" aria-hidden="true">✦ ▤ ◇</span>
+    <span class="study-tag"><i aria-hidden="true"></i>مساحتك للتركيز والإنجاز</span>
+    <h1 class="h1">جاهز تبدأ؟</h1>
+    <p>خد نفس، ركّز، وحلّ على مهلك. كل سؤال خطوة لقدّام.</p>
+  </header>
   <div class="card">
-    <div class="h1">بوابة الامتحانات</div>
+    <div class="h2" style="margin-top:0">بوابة الامتحانات</div>
     <p class="muted">اكتب الكود اللي المدرس بعتهولك عشان تدخل امتحانك.</p>
     <label>كود الامتحان</label>
     <input type="text" id="code" class="ltr" placeholder="مثال: K7QX2MB4TP9W" autocomplete="off">
@@ -147,7 +197,7 @@ function studentLanding(err){
 function studentInfo(){
   const s = studentState;
   const totalPts = s.session.reduce((a,q)=>a+Number(q.points),0);
-  const resumed = s.session.some((q,i)=>s.answers[i]!==null);
+  const resumed = s.session.some(q=>answerPresent(s.answers[q.srcIdx]));
   render(`
   <div class="topbar"><div><div class="t1">${esc(s.exam.title)}</div><div class="t2">${esc(s.exam.subject||'')}</div></div></div>
   <div class="card">
@@ -162,61 +212,115 @@ function studentInfo(){
     <ol class="muted">
       <li>التايمر شغال من أول ما فتحت الامتحان (${s.exam.duration_min} دقيقة)، ولو الوقت خلص الامتحان بيتسلّم لوحده.</li>
       <li>إجاباتك بتتحفظ على السيرفر مع كل إجابة.</li>
-      <li>تقدر تتنقل بين الأسئلة بحرية من أرقام الأسئلة فوق.</li>
+      <li>الأسئلة كلها في نفس الصفحة. تقدر تراجعها من الأرقام فوق، وزر التسليم في الآخر خالص.</li>
     </ol>
     <div class="actions"><button class="btn btn-p" id="start">${resumed ? 'كمّل الامتحان' : 'ابدأ الامتحان'}</button></div>
   </div>`);
   on('#start','click', () => { location.hash = '#/exam/q'; });
 }
 
-async function saveAnswer(qid, value){
-  try { await sb.rpc('save_answer', { p_session: studentState.sessionId, p_question: qid, p_answer: value }); } catch(e){}
+// Keep each question's saves in order, including text typed just before submit.
+const answerTimers = new Map();
+const answerSaves = new Map();
+const failedAnswers = new Map();
+function answerPresent(value){return value!==null && value!==undefined && String(value).trim()!=='';}
+function saveStatus(text){const el=app.querySelector('#save-status');if(el)el.textContent=text;}
+function saveAnswer(qid,value){
+  const sessionId=studentState.sessionId;
+  const previous=answerSaves.get(qid)||Promise.resolve();
+  saveStatus('جاري حفظ إجاباتك…');
+  const pending=previous.catch(()=>{}).then(async()=>{
+    const {data,error}=await sb.rpc('save_answer',{p_session:sessionId,p_question:qid,p_answer:value});
+    if(error || (data && data.ok===false)) throw new Error('save failed');
+    failedAnswers.delete(qid);
+  }).catch(()=>{failedAnswers.set(qid,value);}).finally(()=>{
+    if(answerSaves.get(qid)===pending)answerSaves.delete(qid);
+    if(!answerSaves.size && !answerTimers.size)saveStatus(failedAnswers.size?'في إجابات لسه متحفظتش. اتأكد من اتصالك قبل التسليم.':'إجاباتك اتحفظت تلقائيًا.');
+  });
+  answerSaves.set(qid,pending);
+  return pending;
 }
-let saveTimer = null;
-function saveAnswerDebounced(qid, value){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveAnswer(qid, value), 700);
+function saveAnswerDebounced(qid,value){
+  clearTimeout(answerTimers.get(qid)?.timer);
+  const timer=setTimeout(()=>{answerTimers.delete(qid);saveAnswer(qid,value);},700);
+  answerTimers.set(qid,{timer,value});
+  saveStatus('جاري حفظ إجاباتك…');
 }
-
+async function flushAnswers(){
+  for(const [qid,item] of answerTimers){clearTimeout(item.timer);saveAnswer(qid,item.value);}
+  answerTimers.clear();
+  await Promise.all([...answerSaves.values()]);
+  const retry=[...failedAnswers];
+  await Promise.all(retry.map(([qid,value])=>saveAnswer(qid,value)));
+  return failedAnswers.size===0;
+}
+function refreshProgress(){
+  const s=studentState;
+  const count=s.session.filter(q=>answerPresent(s.answers[q.srcIdx])).length;
+  app.querySelectorAll('[data-nav]').forEach(button=>{
+    const q=s.session[+button.dataset.nav];
+    button.classList.toggle('done',answerPresent(s.answers[q.srcIdx]));
+  });
+  const label=app.querySelector('#answered-count');if(label)label.textContent=count+' من '+s.session.length;
+  const bar=app.querySelector('#progress-fill');if(bar)bar.style.width=(count*100/s.session.length)+'%';
+  const summary=app.querySelector('#finish-summary');if(summary)summary.textContent=count===s.session.length?'جاوبت على كل الأسئلة. راجع إجاباتك قبل التسليم.':'جاوبت على '+count+' من '+s.session.length+' سؤال. راجع الأسئلة اللي لسه من غير إجابة.';
+  app.querySelector('#confirm')?.remove();
+}
+function scrollQuestion(index){
+  const card=app.querySelector('#question-'+index);
+  card?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+  card?.focus({preventScroll:true});
+}
 function studentExam(){
-  const s = studentState;
-  const q = s.session[s.idx];
-  const ans = s.answers[q.srcIdx];
-  const answered = s.session.filter((x,i)=>s.answers[i]!==null&&s.answers[i]!=='').length;
-  const timeLeft = Math.max(0, Math.round((s.endAt - Date.now())/1000));
+  const s=studentState;
+  const timeLeft=Math.max(0,Math.round((s.endAt-Date.now())/1000));
   render(`
   <div class="topbar">
-    <div><div class="t1">${esc(s.exam.title)}</div><div class="t2">${esc(s.student)}</div></div>
-    <div class="timer ${timeLeft<=60?'low':''}" id="timer">${mmss(timeLeft)}</div>
+    <div><div class="t1">${esc(s.exam.title)}</div><div class="t2">${esc(s.student)} · ركّز، وإجاباتك محفوظة</div></div>
+    <div class="timer ${timeLeft<=60?'low':''}" id="timer" role="timer" aria-label="الوقت المتبقي">${mmss(timeLeft)}</div>
   </div>
-  <div class="qnav">${s.session.map((x,i)=>`<button class="${s.answers[i]!==null&&s.answers[i]!==''?'done':''} ${i===s.idx?'cur':''}" data-nav="${i}">${i+1}</button>`).join('')}</div>
-  <div class="card">
-    <div class="muted">سؤال ${s.idx+1} من ${s.session.length} ${q.type==='essay'?'· مقالي':q.type==='sa'?'· إجابة قصيرة':''} · الدرجة: ${q.points}</div>
-    <p style="font-size:17px;font-weight:600">${esc(q.text)}</p>
-    ${(q.type==='mcq'||q.type==='tf') ? q.choices.map((c,ci)=>`<button class="choice ${ans===q.correctMap[ci]?'sel':''}" data-choice="${q.correctMap[ci]}">${esc(c)}</button>`).join('') : ''}
-    ${q.type==='sa' ? `<input type="text" id="sa" placeholder="اكتب إجابتك هنا" value="${esc(ans??'')}" autocomplete="off">` : ''}
-    ${q.type==='essay' ? `<textarea id="essay" placeholder="اكتب إجابتك بالتفصيل" style="min-height:140px">${esc(ans??'')}</textarea>` : ''}
-  </div>
-  <div class="actions">
-    <button class="btn btn-s btn-sm" id="prev" ${s.idx===0?'disabled':''}>السابق</button>
-    <button class="btn btn-s btn-sm" id="next" ${s.idx===s.session.length-1?'disabled':''}>التالي</button>
-    <button class="btn btn-p" id="submit">تسليم الامتحان</button>
-  </div>
-  <div class="muted" style="margin-top:8px">إجاباتك بتتحفظ تلقائيًا (${answered} من ${s.session.length} متجاوب عليها). التسليم التلقائي شغال عند انتهاء الوقت.</div>`);
-  on('[data-nav]','click', e => { s.idx = +e.target.dataset.nav; studentExam(); });
-  on('[data-choice]','click', e => {
-    const orig = +e.target.dataset.choice;
-    s.answers[q.srcIdx] = orig;
-    saveAnswer(q.id, orig);
-    studentExam();
+  <section class="exam-progress" aria-label="متابعة إجاباتك">
+    <div class="progress-label"><span>رحلتك في الامتحان</span><b id="answered-count"></b></div>
+    <div class="progress-track" aria-hidden="true"><span id="progress-fill"></span></div>
+    <nav class="qnav" aria-label="انتقل لسؤال">${s.session.map((q,i)=>`<button data-nav="${i}" aria-label="انتقل للسؤال ${i+1}">${i+1}</button>`).join('')}</nav>
+    <div class="save-status" id="save-status" role="status">إجاباتك بتتحفظ تلقائيًا. التسليم التلقائي عند انتهاء الوقت.</div>
+  </section>
+  <main id="question-list">${s.session.map((q,i)=>{
+    const ans=s.answers[q.srcIdx];
+    return `<section class="card question-card" id="question-${i}" data-question="${i}" tabindex="-1" aria-labelledby="qtext-${i}">
+      <div class="question-heading"><span class="question-number" aria-hidden="true">${i+1}</span><div class="muted">سؤال ${i+1} من ${s.session.length} · ${q.type==='essay'?'مقالي':q.type==='sa'?'إجابة قصيرة':q.type==='tf'?'صح أو خطأ':'اختيار من متعدد'} · الدرجة: ${esc(q.points)}</div></div>
+      <h2 class="question-text" id="qtext-${i}">${esc(q.text)}</h2>
+      ${(q.type==='mcq'||q.type==='tf')?q.choices.map((c,ci)=>`<button class="choice ${ans===q.correctMap[ci]?'sel':''}" data-choice="${q.correctMap[ci]}" aria-pressed="${ans===q.correctMap[ci]}"><span class="choice-dot" aria-hidden="true"></span><span class="choice-text">${esc(c)}</span></button>`).join(''):''}
+      ${q.type==='sa'?`<input type="text" class="answer-text" aria-labelledby="qtext-${i}" placeholder="اكتب إجابتك هنا" value="${esc(ans??'')}" autocomplete="off">`:''}
+      ${q.type==='essay'?`<textarea class="answer-text" aria-labelledby="qtext-${i}" placeholder="اكتب إجابتك بالتفصيل" style="min-height:140px">${esc(ans??'')}</textarea>`:''}
+    </section>`;
+  }).join('')}</main>
+  <section class="card exam-finish">
+    <div class="h2">وصلت لآخر الأسئلة</div>
+    <p class="muted" id="finish-summary"></p>
+    <button class="btn btn-p" id="submit">مراجعة وتسليم الامتحان</button>
+    <div class="muted" style="margin-top:10px">هتظهرلك خطوة تأكيد قبل التسليم النهائي.</div>
+  </section>`);
+  on('[data-nav]','click',e=>scrollQuestion(+e.currentTarget.dataset.nav));
+  on('[data-choice]','click',e=>{
+    if(s.submitting)return;
+    const button=e.currentTarget;
+    const card=button.closest('[data-question]');
+    const q=s.session[+card.dataset.question];
+    const value=+button.dataset.choice;
+    s.answers[q.srcIdx]=value;
+    card.querySelectorAll('[data-choice]').forEach(el=>{const selected=+el.dataset.choice===value;el.classList.toggle('sel',selected);el.setAttribute('aria-pressed',String(selected));});
+    saveAnswer(q.id,value);refreshProgress();
   });
-  const sa = app.querySelector('#sa'); if (sa) sa.addEventListener('input', () => { s.answers[q.srcIdx] = sa.value; saveAnswerDebounced(q.id, sa.value); });
-  const es = app.querySelector('#essay'); if (es) es.addEventListener('input', () => { s.answers[q.srcIdx] = es.value; saveAnswerDebounced(q.id, es.value); });
-  on('#prev','click', () => { if (s.idx>0){ s.idx--; studentExam(); } });
-  on('#next','click', () => { if (s.idx<s.session.length-1){ s.idx++; studentExam(); } });
-  on('#submit','click', () => confirmSubmit());
-  startTick();
+  on('.answer-text','input',e=>{
+    const q=s.session[+e.target.closest('[data-question]').dataset.question];
+    s.answers[q.srcIdx]=e.target.value;
+    saveAnswerDebounced(q.id,e.target.value);refreshProgress();
+  });
+  on('#submit','click',confirmSubmit);
+  refreshProgress();startTick();
 }
+
 
 function startTick(){
   clearInterval(studentState.timerIv);
@@ -231,24 +335,50 @@ function startTick(){
 }
 
 function confirmSubmit(){
-  const s = studentState;
-  const missing = s.session.filter((x,i)=>s.answers[i]===null||s.answers[i]==='').length;
-  const card = document.createElement('div');
-  card.className = 'card'; card.id = 'confirm';
-  card.innerHTML = `<div class="h2">متأكد إنك عايز تسلّم؟</div>
-    <div class="warn">${missing ? 'لسه في '+missing+' سؤال من غير إجابة، وهيتحسبوا غلط. ' : 'كل الأسئلة متجاوب عليها. '}بعد التسليم مش هتقدر تعدّل أي حاجة.</div>
-    <div class="actions"><button class="btn btn-p" id="yes">تأكيد التسليم</button><button class="btn btn-g" id="no">رجوع أكمّل</button></div>`;
-  app.appendChild(card); card.scrollIntoView({behavior:'smooth'});
-  card.querySelector('#yes').onclick = () => doSubmit(false);
-  card.querySelector('#no').onclick = () => card.remove();
+  const s=studentState;
+  if(s.submitting)return;
+  app.querySelector('#confirm')?.remove();
+  const missing=s.session.map((q,i)=>answerPresent(s.answers[q.srcIdx])?null:i).filter(i=>i!==null);
+  const card=document.createElement('section');
+  card.className='card';card.id='confirm';card.setAttribute('aria-labelledby','confirm-title');
+  card.innerHTML=`<h2 class="h2" id="confirm-title" tabindex="-1">متأكد إنك عايز تسلّم؟</h2>
+    <div class="warn">${missing.length?'لسه في '+missing.length+' سؤال من غير إجابة، وهيتحسبوا غلط.':'كل الأسئلة متجاوب عليها.'} بعد التسليم مش هتقدر تعدّل أي حاجة.</div>
+    ${missing.length?`<p class="muted">الأسئلة الناقصة: ${missing.map(i=>i+1).join('، ')}</p>`:''}
+    <div class="actions"><button class="btn btn-s" id="no">رجوع أراجع</button><button class="btn btn-p" id="yes">تأكيد التسليم النهائي</button></div>`;
+  app.appendChild(card);
+  card.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+  card.querySelector('#confirm-title').focus({preventScroll:true});
+  card.querySelector('#yes').onclick=()=>doSubmit(false);
+  card.querySelector('#no').onclick=()=>{card.remove();if(missing.length)scrollQuestion(missing[0]);else app.querySelector('#submit').focus();};
 }
 
 async function doSubmit(auto){
   const s = studentState;
+  if(s.submitting)return;
+  s.submitting=true;
   clearInterval(s.timerIv);
+  app.querySelectorAll('button,input,textarea').forEach(el=>el.disabled=true);
+  const saved=await flushAnswers();
+  if(!saved){
+    s.submitting=false;
+    app.querySelectorAll('button,input,textarea').forEach(el=>el.disabled=false);
+    app.querySelector('#confirm')?.remove();
+    saveStatus('التسليم متوقف لأن في إجابات متحفظتش. اتأكد من النت واضغط التسليم تاني.');
+    if(auto){
+      render('<div class="card"><div class="err" role="alert">الوقت خلص، لكن في إجابات متحفظتش بسبب مشكلة في الاتصال. الامتحان لسه متسلّمش. اتأكد من النت واضغط إعادة المحاولة.</div><button class="btn btn-p" id="retry-save">إعادة الحفظ والتسليم</button></div>');
+      on('#retry-save','click',()=>doSubmit(true));
+    }else{
+      const notice=document.createElement('div');notice.className='err';notice.setAttribute('role','alert');
+      notice.textContent='في إجابات متحفظتش. اتأكد من النت واضغط التسليم تاني.';
+      app.querySelector('.exam-finish').appendChild(notice);
+      startTick();
+    }
+    return;
+  }
   const timeSec = Math.min(s.exam.duration_min*60, Math.round((Date.now() - (s.endAt - s.exam.duration_min*60000))/1000));
   const { data, error } = await sb.rpc('submit_exam', { p_session: s.sessionId, p_time_sec: timeSec, p_auto: auto });
   if (error || !data || !data.ok){
+    s.submitting=false;
     if (data && data.error === 'already_submitted'){ location.hash = '#/done'; studentDone({already:true}); return; }
     render('<div class="card"><div class="err">حصلت مشكلة في التسليم. جرب تاني.</div><div class="actions"><button class="btn btn-p" id="r">إعادة المحاولة</button></div></div>');
     on('#r','click', () => doSubmit(auto)); return;
@@ -893,6 +1023,7 @@ async function tSettings(){
 // ============ ROUTER ============
 async function route(){
   const h = location.hash || '#/';
+  document.body.classList.toggle('student-view',!h.startsWith('#/teacher'));
   clearInterval(studentState?.timerIv);
   if (h === '#/' || h === '#') return studentLanding();
   if (h === '#/exam') return studentState ? studentInfo() : studentLanding();
