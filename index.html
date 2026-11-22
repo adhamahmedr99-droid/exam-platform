@@ -66,6 +66,7 @@ label{font-size:13px;color:var(--ink2);display:block;margin-top:12px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .answer-key{background:var(--tealsoft);border:1px solid var(--teal);border-radius:12px;padding:12px;margin-top:10px}.answer-pick{display:flex;gap:8px;align-items:center;margin:0;font-size:14px;color:var(--navy);min-height:44px}.answer-pick input{width:22px;height:22px;accent-color:var(--teal);flex-shrink:0}.flow{display:grid;gap:8px}.flow a{text-align:start}.ltr{direction:ltr;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
 @media print{.side,.no-print{display:none!important}body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}
+.track-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.track-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.track-head strong{font-size:18px;overflow-wrap:anywhere}.track-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.track-metrics>div{background:var(--gray);border-radius:12px;padding:12px;min-width:0}.track-metrics span,.track-metrics small{display:block;font-size:12px;color:var(--ink2)}.track-metrics b{display:block;font-size:22px;color:var(--navy)}
 </style>
 </head>
 <body>
@@ -277,7 +278,7 @@ function studentDone(opts){
 }
 
 // ============ TEACHER ============
-const NAV = [['#/teacher','لوحة التحكم'],['#/teacher/exams','الامتحانات'],['#/teacher/new','امتحان جديد'],['#/teacher/students','الطلبة'],['#/teacher/codes','الأكواد'],['#/teacher/results','النتايج'],['#/teacher/analytics','التحليلات'],['#/teacher/reports','تقارير أولياء الأمور'],['#/teacher/settings','الإعدادات']];
+const NAV = [['#/teacher','لوحة التحكم'],['#/teacher/exams','الامتحانات'],['#/teacher/new','امتحان جديد'],['#/teacher/students','الطلبة'],['#/teacher/codes','الأكواد'],['#/teacher/tracking','متابعة الطلبة'],['#/teacher/results','النتايج'],['#/teacher/analytics','التحليلات'],['#/teacher/reports','تقارير أولياء الأمور'],['#/teacher/settings','الإعدادات']];
 let profileCache = null;
 
 async function requireTeacher(){
@@ -336,7 +337,7 @@ async function tDashboard(){
     <div class="card"><div class="h2">ابدأ من هنا</div><div class="flow">
       <a class="btn btn-p" href="#/teacher/new">١. اعمل امتحان وحدد الإجابات الصحيحة</a>
       <a class="btn btn-s" href="#/teacher/codes">٢. انشر الامتحان واعمل أكواد الطلبة</a>
-      <a class="btn btn-s" href="#/teacher/codes">٣. ابعت دعوة كل طالب على واتساب</a>
+      <a class="btn btn-s" href="#/teacher/codes">٣. ابعت دعوة كل طالب على واتساب</a><a class="btn btn-t" href="#/teacher/tracking">٤. تابع الطلبة ودرجاتهم ووقت الحل</a>
     </div><div class="note">الإجابات الصحيحة للمدرس بس، ومش بتظهر للطالب. التصحيح تلقائي ما عدا المقالي.</div></div>
     <div class="cards">
       <div class="scard"><b>${ex.length}</b><span>امتحانات</span></div>
@@ -362,7 +363,7 @@ async function tExams(){
       <div class="dt">${esc([e.subject,e.grade].filter(Boolean).join(' · ')||'بدون مادة')} · ${e.questions[0].count} سؤال · ${e.duration_min} دقيقة · ${e.codes[0].count} كود</div>
     </div><div class="actions" style="margin:0">
       <a class="btn btn-s btn-sm" href="#/teacher/edit/${e.id}">تعديل</a>
-      <a class="btn btn-s btn-sm" href="#/teacher/codes/${e.id}">الأكواد</a>
+      <a class="btn btn-s btn-sm" href="#/teacher/codes/${e.id}">الأكواد</a><a class="btn btn-t btn-sm" href="#/teacher/tracking/${e.id}">متابعة الطلبة</a>
       <button class="btn btn-g btn-sm" data-pub="${e.id}" data-v="${e.published?0:1}">${e.published?'إيقاف النشر':'انشر'}</button>
       <button class="btn btn-g btn-sm" data-del="${e.id}">حذف</button>
     </div></div>`).join('');
@@ -601,6 +602,90 @@ async function tCodes(examId){
   });
 }
 
+
+// Teacher tracking is read-only. All queries remain scoped by Supabase RLS.
+const one = v => Array.isArray(v) ? v[0] : v;
+const trackingDate = v => v ? new Date(v).toLocaleString('ar-EG', {dateStyle:'short',timeStyle:'short'}) : '—';
+function trackingDuration(v){
+  if (v == null || !Number.isFinite(Number(v))) return 'غير متاح';
+  const sec = Math.max(0, Math.round(Number(v)));
+  return `<bdi dir="ltr">${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}</bdi>`;
+}
+async function tTracking(examId){
+  const u = await requireTeacher(); if (!u) return;
+  teacherShell('#/teacher/tracking','<div class="h1">متابعة الطلبة</div><div class="note" role="status">بنحمّل المتابعة…</div>');
+  const {data: exams, error: exError} = await sb.from('exams').select('id,title,duration_min').order('created_at',{ascending:false});
+  if (exError) return trackingError();
+  if (!exams?.length){
+    teacherShell('#/teacher/tracking','<div class="h1">متابعة الطلبة</div><div class="note">مفيش امتحانات لسه. اعمل امتحان ووزّع أكواد الطلبة، ومتابعتهم هتظهر هنا.</div><a class="btn btn-p" href="#/teacher/new">امتحان جديد</a>'); return;
+  }
+  const exam = exams.find(e=>e.id===examId) || exams[0];
+  const [codeRes, questionRes] = await Promise.all([
+    sb.from('codes').select('id,student_name,status,exam_sessions(id,started_at,status,submissions(id,auto_score,auto_total,time_sec,submitted_at,essay_grades(question_id,awarded)))').eq('exam_id',exam.id).order('created_at'),
+    sb.from('questions').select('id,points').eq('exam_id',exam.id).eq('type','essay')
+  ]);
+  if (codeRes.error || questionRes.error) return trackingError();
+  if (!location.hash.startsWith('#/teacher/tracking')) return;
+  const essays = questionRes.data || [], loadedAt = Date.now();
+  const rows = (codeRes.data||[]).map(c=>{
+    const session = one(c.exam_sessions), sub = one(session?.submissions);
+    const status = sub || session?.status==='submitted' || c.status==='completed' ? 'submitted' : session || c.status==='in_progress' ? 'in_progress' : 'unused';
+    const elapsed = session?.started_at ? Math.max(0,Math.floor((loadedAt-new Date(session.started_at).getTime())/1000)) : null;
+    const overdue = status==='in_progress' && elapsed!==null && elapsed>=exam.duration_min*60;
+    const grades = sub?.essay_grades||[];
+    const pending = essays.some(q=>!grades.some(g=>g.question_id===q.id));
+    const awarded = essays.reduce((sum,q)=>sum+Number(grades.find(g=>g.question_id===q.id)?.awarded||0),0);
+    const total = sub ? Number(sub.auto_total)+essays.reduce((sum,q)=>sum+Number(q.points),0) : null;
+    const score = sub ? Number(sub.auto_score)+awarded : null;
+    return {...c,session,sub,status,elapsed,overdue,pending,total,score};
+  });
+  teacherShell('#/teacher/tracking',`
+    <div class="h1">متابعة الطلبة</div>
+    <p class="muted">مين دخل، ومين سلّم، ودرجته والوقت اللي خده.</p>
+    <div class="card">
+      <label for="track-exam">اختار الامتحان</label>
+      <select id="track-exam">${exams.map(e=>`<option value="${esc(e.id)}" ${e.id===exam.id?'selected':''}>${esc(e.title)}</option>`).join('')}</select>
+      <div class="actions"><button class="btn btn-p" id="track-refresh">تحديث المتابعة</button><a class="btn btn-s" href="#/teacher/codes/${exam.id}">أكواد الامتحان</a></div>
+      <div class="muted" style="margin-top:8px">آخر تحديث: ${trackingDate(loadedAt)}. اضغط تحديث عشان تشوف آخر حالة.</div>
+    </div>
+    <div class="cards track-counts">
+      <div class="scard"><b>${rows.length}</b><span>كل الطلبة</span></div>
+      <div class="scard"><b>${rows.filter(r=>r.status==='unused').length}</b><span>لسه مدخلوش</span></div>
+      <div class="scard"><b>${rows.filter(r=>r.status==='in_progress').length}</b><span>دخلوا ولم يسلّموا</span></div>
+      <div class="scard"><b>${rows.filter(r=>r.status==='submitted').length}</b><span>سلّموا الامتحان</span></div>
+    </div>
+    <div class="card">
+      <label for="track-search">دور باسم الطالب</label><input id="track-search" type="text" placeholder="اكتب اسم الطالب">
+      <label for="track-status">الحالة</label><select id="track-status"><option value="all">كل الحالات</option value="unused">لسه مدخلش</option value="in_progress">دخل ولم يسلّم</option><option value="submitted">سلّم الامتحان</option></select>
+    </div>
+    <div id="track-list" aria-live="polite"></div>
+    <div class="note">القائمة بتعرض كل كود طالب للامتحان ده. «دخل ولم يسلّم» معناها إنه بدأ جلسة، مش بالضرورة فاتح الصفحة دلوقتي. لو في أسئلة مقالية، الدرجة بتفضل مبدئية لحد تصحيحها.</div>
+    <a class="btn btn-s" href="#/teacher/results">النتايج وتصحيح المقالي</a>`);
+  const draw = () => {
+    const query = normAr(val('#track-search')), status = val('#track-status');
+    const filtered = rows.filter(r=>(status==='all'||r.status===status)&&normAr(r.student_name).includes(query));
+    app.querySelector('#track-list').innerHTML = !rows.length ? '<div class="note">مفيش أكواد طلبة للامتحان ده لسه. اعمل كود لكل طالب من «أكواد الامتحان».</div>' : !filtered.length ? '<div class="note">مفيش طلبة مطابقين للبحث أو الحالة دي.</div>' : filtered.map(r=>`
+      <article class="card track-student">
+        <div class="track-head"><strong>${esc(r.student_name)}</strong><span class="chip ${r.status==='submitted'?'c-done':r.status==='in_progress'?'c-prog':'c-new'}">${r.status==='submitted'?'سلّم الامتحان':r.status==='in_progress'?'دخل ولم يسلّم':'لسه مدخلش'}</span></div>
+        <div class="track-metrics">
+          <div><span>الدرجة</span><b>${r.sub?`${r.score} من ${r.total}`:'—'}</b><small>${r.sub?(r.pending?'مبدئية · المقالي مستني التصحيح':`نهائية${r.total?' · '+Math.round(r.score*1000/r.total)/10+'%':''}`):r.status==='submitted'?'النتيجة غير متاحة':'بعد التسليم'}</small></div>
+          <div><span>${r.status==='in_progress'?'الوقت من الدخول':'مدة الحل'}</span><b>${r.sub?trackingDuration(r.sub.time_sec):r.status==='in_progress'?trackingDuration(r.elapsed):'—'}</b><small>${r.status==='in_progress'?'حتى آخر تحديث':r.sub?'دقيقة : ثانية':'لسه مبدأش'}</small></div>
+        </div>
+        ${r.session?`<div class="muted">دخل: ${trackingDate(r.session.started_at)}</div>`:''}
+        ${r.sub?`<div class="muted">سلّم: ${trackingDate(r.sub.submitted_at)}</div>`:''}
+        ${r.overdue?'<div class="warn">مدة الامتحان عدّت، لكن مفيش تسليم مسجّل لسه.</div>':''}
+      </article>`).join('');
+  };
+  on('#track-search','input',draw); on('#track-status','change',draw);
+  on('#track-exam','change',()=>{location.hash='#/teacher/tracking/'+val('#track-exam');});
+  on('#track-refresh','click',()=>tTracking(exam.id)); draw();
+  function trackingError(){
+    if (!location.hash.startsWith('#/teacher/tracking')) return;
+    teacherShell('#/teacher/tracking','<div class="h1">متابعة الطلبة</div><div class="err">مش قادرين نحمّل المتابعة دلوقتي. مفيش بيانات اتغيرت. جرّب تاني.</div><button class="btn btn-p" id="track-retry">حاول تاني</button>');
+    on('#track-retry','click',()=>tTracking(examId));
+  }
+}
+
 async function loadSubmissions(){
   const { data: subs } = await sb.from('submissions').select('*, exam_sessions(code_id, codes(token, student_name, exam_id, exams(id,title,subject,grade,pass_pct)))').order('submitted_at',{ascending:false});
   return subs || [];
@@ -620,7 +705,7 @@ async function tResults(){
   const gmap = {}; (grades||[]).forEach(g => { (gmap[g.submission_id] = gmap[g.submission_id] || {})[g.question_id] = g.awarded; });
   const finalOf = async s => s; // final computed below with essay max fetched lazily
   teacherShell('#/teacher/results', `
-    <div class="h1">النتايج</div>
+    <div class="h1">النتايج</div><a class="btn btn-t" href="#/teacher/tracking">متابعة دخول الطلبة ومدة الحل</a>
     ${subs.length ? `<div class="card">${subs.map((s,i)=>`
       <div class="row"><div>
         <div class="nm">${esc(s.student)}</div>
@@ -772,7 +857,8 @@ async function tReports(){
   on('[data-print]','click', e => {
     const i = +e.target.dataset.print;
     const w = window.open('', '_blank');
-    w.document.write(`<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير</title><style>body{font-family:Tahoma;line-height:2;padding:30px;white-space:pre-wrap}</style></head><body>${esc(reports[i].report)}</body></html>`);
+    w.document.write(`<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير</title><style>body{font-family:Tahoma;line-height:2;padding:30px;white-space:pre-wrap}.track-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.track-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.track-head strong{font-size:18px;overflow-wrap:anywhere}.track-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.track-metrics>div{background:var(--gray);border-radius:12px;padding:12px;min-width:0}.track-metrics span,.track-metrics small{display:block;font-size:12px;color:var(--ink2)}.track-metrics b{display:block;font-size:22px;color:var(--navy)}
+</style></head><body>${esc(reports[i].report)}</body></html>`);
     w.document.close(); w.focus(); w.print();
   });
   // keep wa link in sync with edited phone
@@ -819,6 +905,7 @@ async function route(){
   if (h.startsWith('#/teacher/edit/')) return tBuilder(h.split('/')[3]);
   if (h === '#/teacher/students') return tStudents();
   if (h.startsWith('#/teacher/codes')) return tCodes(h.split('/')[3]);
+  if (h.startsWith('#/teacher/tracking')) return tTracking(h.split('/')[3]);
   if (h === '#/teacher/results') return tResults();
   if (h.startsWith('#/teacher/analytics')) return tAnalytics(h.split('/')[3]);
   if (h === '#/teacher/reports') return tReports();
