@@ -514,6 +514,23 @@ async function tExams(){
 let draft = null; // builder state
 function blankQ(){ return { text:'', type:'mcq', choices:['',''], correct:-1, acceptedText:'', points:1 }; }
 
+// Bulk import only changes the in-memory draft. Saving remains an explicit step.
+function parseExamImport(raw){
+  if(typeof raw !== 'string' || raw.length > 500000) throw new Error('الملف كبير جدًا. الحد الأقصى ٥٠٠ كيلوبايت.');
+  let data; try { data=JSON.parse(raw); } catch { throw new Error('الملف مش JSON صالح. اختار ملف الامتحان الأصلي.'); }
+  const rows=Array.isArray(data)?data:data?.questions;
+  if(!Array.isArray(rows)||!rows.length||rows.length>100) throw new Error('لازم الملف يحتوي من ١ إلى ١٠٠ سؤال.');
+  const questions=rows.map((q,i)=>{
+    if(!q||typeof q.text!=='string'||!q.text.trim()||q.text.length>5000) throw new Error('نص السؤال '+(i+1)+' ناقص أو طويل جدًا.');
+    if(q.type && q.type!=='mcq') throw new Error('الاستيراد بيدعم الاختيار من متعدد بس.');
+    if(!Array.isArray(q.choices)||q.choices.length<2||q.choices.length>6||q.choices.some(c=>typeof c!=='string'||!c.trim()||c.length>2000)) throw new Error('راجع اختيارات السؤال '+(i+1)+'.');
+    if(!Number.isInteger(q.correct)||q.correct<0||q.correct>=q.choices.length) throw new Error('الإجابة الصحيحة للسؤال '+(i+1)+' مش محددة صح.');
+    if(q.points!==undefined && ![1,2,3,5,10].includes(q.points)) throw new Error('درجة السؤال '+(i+1)+' غير مدعومة.');
+    return {text:q.text.trim(),type:'mcq',choices:q.choices.map(c=>c.trim()),correct:q.correct,points:q.points??1,acceptedText:''};
+  });
+  return {questions,title:typeof data.title==='string'?data.title.slice(0,200):'',subject:typeof data.subject==='string'?data.subject.slice(0,100):''};
+}
+
 async function tBuilder(editId){
   const u = await requireTeacher(); if (!u) return;
   const p = await getProfile(u.id);
@@ -575,6 +592,16 @@ async function tBuilder(editId){
       <label>ترتيب عشوائي للاختيارات</label><select id="f-shc"><option value="1" ${d.shuffleC?'selected':''}>أيوه</option><option value="0" ${!d.shuffleC?'selected':''}>لأ</option></select>
       <label>الطالب يشوف نتيجته بعد التسليم</label><select id="f-show"><option value="1" ${d.showResult?'selected':''}>أيوه</option><option value="0" ${!d.showResult?'selected':''}>لأ</option></select>
     </div>
+    <div class="card" id="bulk-import">
+      <div class="h2">استيراد أسئلة من ملف</div>
+      <p class="muted">اختار ملف JSON اللي جهزتهولك، أو الصق محتواه. الأسئلة هتتضاف للمسودة بس، ومش هتتحفظ ولا تتنشر إلا لما تضغط حفظ بنفسك. الملف فيه الإجابات الصحيحة، احتفظ بيه للمدرس بس.</p>
+      <label for="import-file">ملف الأسئلة (JSON)</label><input id="import-file" type="file" accept=".json,application/json">
+      <details><summary style="cursor:pointer;min-height:44px;padding-top:12px">أو الصق محتوى الملف</summary>
+        <textarea id="import-json" dir="ltr" rows="5" placeholder='{"questions":[{"text":"سؤال","choices":["أ","ب"],"correct":0}]}'></textarea>
+        <button type="button" class="btn btn-s" id="import-paste">أضف الأسئلة للمسودة</button>
+      </details>
+      <div id="import-status" role="status" aria-live="polite"></div>
+    </div>
     ${qHtml}
     <div class="card"><div id="berr"></div><div class="actions">
       <button class="btn btn-s" id="addq">أضف سؤال</button>
@@ -595,6 +622,27 @@ async function tBuilder(editId){
       const rc = app.querySelector(`[data-qcorrect="${i}"]:checked`); if (rc) q.correct = +rc.value;
     });
   };
+  const applyImport = async raw => {
+    try {
+      const imported=parseExamImport(raw);
+      syncDraft();
+      if(d.qs.length+imported.questions.length>100) throw new Error('الحد الأقصى للمسودة ١٠٠ سؤال.');
+      d.qs.push(...imported.questions);
+      if(!d.title.trim()) d.title=imported.title;
+      if(!d.subject.trim()) d.subject=imported.subject;
+      await tBuilder(editId);
+      const status=app.querySelector('#import-status');
+      status.innerHTML='<div class="ok">اتضاف '+imported.questions.length+' سؤال للمسودة بالإجابات الصحيحة. راجعهم وحدد المدة، وبعدها اضغط احفظ الامتحان. لسه متحفظش على السيرفر.</div>';
+      app.querySelector('#bulk-import').scrollIntoView({block:'start'});
+    } catch(err) { app.querySelector('#import-status').innerHTML='<div class="err">'+esc(err.message)+'</div>'; }
+  };
+  on('#import-paste','click',()=>applyImport(val('#import-json')));
+  on('#import-file','change',async e=>{
+    const file=e.target.files?.[0]; if(!file) return;
+    if(file.size>500000){app.querySelector('#import-status').innerHTML='<div class="err">الملف كبير جدًا. الحد الأقصى ٥٠٠ كيلوبايت.</div>';e.target.value='';return;}
+    try {await applyImport(await file.text());} catch {app.querySelector('#import-status').innerHTML='<div class="err">مقدرتش أقرأ الملف. جرّب تاني أو الصق محتواه.</div>';}
+    e.target.value='';
+  });
   on('[data-qcorrect]','change', () => { app.querySelector('#berr').innerHTML=''; });
   on('#addq','click', () => { syncDraft(); d.qs.push(blankQ()); tBuilderKeep(); });
   on('[data-qtype]','change', () => { syncDraft(); tBuilderKeep(); });
