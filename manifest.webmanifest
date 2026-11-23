@@ -1,0 +1,17 @@
+{
+  "name": "منصة الامتحانات",
+  "short_name": "الامتحانات",
+  "description": "منصة امتحانات إلكترونية: امتحانات بتصحيح تلقائي وتقارير لولي الأمر",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12233f",
+  "theme_color": "#12233f",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
