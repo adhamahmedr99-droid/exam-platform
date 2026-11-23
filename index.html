@@ -493,7 +493,7 @@ function teacherShell(active, inner){
 function teacherLogin(err){
   render(`<div class="card" style="max-width:440px;margin:40px auto">
     <div class="h1">دخول المدرس</div>
-    <p class="muted">سجّل دخولك بحسابك، أو اعمل حساب جديد أول مرة.</p>
+    <p class="muted">سجّل دخولك بحسابك، أو اعمل حساب جديد أول مرة. كل مدرس ليه حسابه الخاص: امتحاناته وطلبته ودرجاتهم منفصلة تمامًا عن أي مدرس تاني.</p>
     <label>البريد الإلكتروني</label><input type="email" id="em" autocomplete="username">
     <label>كلمة السر</label><input type="password" id="pw" autocomplete="current-password">
     ${err?`<div class="err">${esc(err)}</div>`:''}
@@ -501,7 +501,7 @@ function teacherLogin(err){
       <button class="btn btn-p" id="in">دخول</button>
       <button class="btn btn-s" id="up">حساب جديد</button>
     </div>
-    <div class="note">أول مرة تعمل حساب، ممكن يوصلك إيميل تأكيد من Supabase - افتحه واضغط اللينك وبعدين سجّل دخول.</div>
+    <div class="note">حساب جديد بيدخل على طول من غير تأكيد إيميل. المنصة بتدعم أي عدد مدرسين، كل واحد بحسابه.</div>
   </div>`);
   on('#in','click', async () => {
     const { error } = await sb.auth.signInWithPassword({ email: val('#em').trim(), password: val('#pw') });
@@ -511,7 +511,7 @@ function teacherLogin(err){
   on('#up','click', async () => {
     const { error } = await sb.auth.signUp({ email: val('#em').trim(), password: val('#pw') });
     if (error) return teacherLogin(error.message);
-    teacherLogin('الحساب اتعمل. لو وصلك إيميل تأكيد افتحه الأول، وبعدين سجّل دخول.');
+    teacherLogin('الحساب اتعمل. سجّل دخول دلوقتي بنفس الإيميل وكلمة السر.');
   });
 }
 
