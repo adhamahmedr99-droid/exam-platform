@@ -111,6 +111,14 @@ body.student-view::after{width:140px;height:140px;border:22px solid #d2dcf6;bott
 @media(prefers-reduced-motion:reduce){.student-view::before,.student-view::after,.student-view .timer.low,#confirm{animation:none!important}.student-view *{scroll-behavior:auto!important;transition:none!important}}
 
 </style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#12233f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="الامتحانات">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 </head>
 <body>
 <div id="app" class="wrap"></div>
@@ -1126,7 +1134,12 @@ async function tReports(){
     const i = +e.target.dataset.print;
     const w = window.open('', '_blank');
     w.document.write(`<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تقرير</title><style>body{font-family:Tahoma;line-height:2;padding:30px;white-space:pre-wrap}.track-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.track-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.track-head strong{font-size:18px;overflow-wrap:anywhere}.track-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.track-metrics>div{background:var(--gray);border-radius:12px;padding:12px;min-width:0}.track-metrics span,.track-metrics small{display:block;font-size:12px;color:var(--ink2)}.track-metrics b{display:block;font-size:22px;color:var(--navy)}
-</style></head><body>${esc(reports[i].report)}</body></html>`);
+</style></head><body>${esc(reports[i].report)}<script>
+if('serviceWorker' in navigator){
+window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});
+}
+</script>
+</body></html>`);
     w.document.close(); w.focus(); w.print();
   });
   // keep wa link in sync with edited phone
