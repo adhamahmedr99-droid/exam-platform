@@ -72,6 +72,21 @@ label{font-size:13px;color:var(--ink2);display:block;margin-top:12px}
 .pw-wrap input{padding-inline-end:46px}
 .pw-eye{position:absolute;inset-inline-end:6px;top:50%;transform:translateY(-50%);border:none;background:none;cursor:pointer;font-size:18px;color:var(--ink2);padding:8px;min-width:40px;min-height:40px}
 .link-btn{border:none;background:none;color:var(--teal);cursor:pointer;font:inherit;font-size:14px;text-decoration:underline;padding:4px}
+.brand{display:flex;align-items:center;gap:10px;margin:14px 0 4px}
+.brand img{width:40px;height:40px;border-radius:11px}
+.brand .bn{font-size:19px;font-weight:800;color:var(--navy)}
+.brand .bt{font-size:11px;color:var(--ink2)}
+.side .grp{font-size:11px;color:var(--ink2);font-weight:700;margin:12px 6px 2px;white-space:nowrap}
+.side a{display:flex;align-items:center;gap:8px}
+.side a .ic{width:20px;text-align:center;flex-shrink:0}
+@media(max-width:899px){.side .grp{display:none}}
+.login-logo{text-align:center;margin:26px 0 10px}
+.login-logo img{width:72px;height:72px;border-radius:18px;box-shadow:0 6px 18px rgba(18,35,63,.18)}
+.login-logo .bn{font-size:23px;font-weight:800;color:var(--navy);margin-top:8px}
+.card{transition:box-shadow .15s ease}
+.card:hover{box-shadow:0 4px 14px rgba(18,35,63,.09)}
+.side a{transition:background-color .12s,color .12s}
+.side a:hover:not(.on){background:#e9eef4;color:var(--navy)}
 /* Student experience: light CSS-only decoration, never over the questions. */
 body.student-view{background:#f1f6fb;isolation:isolate}
 body.student-view::before,body.student-view::after{content:"";position:fixed;pointer-events:none;z-index:-1;border-radius:38px;opacity:.55;animation:study-float 12s ease-in-out infinite alternate}
@@ -475,6 +490,13 @@ function studentDone(opts){
 
 // ============ TEACHER ============
 const NAV = [['#/teacher','لوحة التحكم'],['#/teacher/exams','الامتحانات'],['#/teacher/new','امتحان جديد'],['#/teacher/students','الطلبة'],['#/teacher/codes','الأكواد'],['#/teacher/tracking','متابعة الطلبة'],['#/teacher/results','النتايج'],['#/teacher/analytics','التحليلات'],['#/teacher/reports','تقارير أولياء الأمور'],['#/teacher/settings','الإعدادات']];
+const NAV_GROUPS = [
+  ['الرئيسية', [['#/teacher','لوحة التحكم','🏠']]],
+  ['الامتحانات', [['#/teacher/exams','الامتحانات','📝'],['#/teacher/new','امتحان جديد','➕'],['#/teacher/codes','الأكواد','🔑']]],
+  ['الطلبة والدرجات', [['#/teacher/students','الطلبة','🎓'],['#/teacher/tracking','متابعة الطلبة','👀'],['#/teacher/results','النتايج','📋'],['#/teacher/analytics','التحليلات','📈']]],
+  ['التقارير', [['#/teacher/reports','تقارير أولياء الأمور','💬']]],
+  ['الحساب', [['#/teacher/settings','الإعدادات','⚙️']]]
+];
 let profileCache = null;
 
 async function requireTeacher(){
@@ -489,8 +511,9 @@ async function getProfile(uid){
   return profileCache;
 }
 function teacherShell(active, inner){
-  render(`<div class="shell"><nav class="side">${NAV.map(([h,l])=>`<a href="${h}" class="${h===active?'on':''}">${l}</a>`).join('')}
-    <a href="#" id="logout" style="color:var(--red)">خروج</a></nav><div>${inner}</div></div>`);
+  const nav = NAV_GROUPS.map(([g,items])=>`<div class="grp">${g}</div>${items.map(([h,l,ic])=>`<a href="${h}" class="${h===active?'on':''}"><span class="ic" aria-hidden="true">${ic}</span>${l}</a>`).join('')}`).join('');
+  render(`<div class="brand"><img src="icon.svg" alt=""><div><div class="bn">المنصة</div><div class="bt">امتحانات وتقارير طلبتك في مكان واحد</div></div></div><div class="shell"><nav class="side">${nav}
+    <a href="#" id="logout" style="color:var(--red)"><span class="ic" aria-hidden="true">🚪</span>خروج</a></nav><div>${inner}</div></div>`);
   on('#logout','click', async e => { e.preventDefault(); profileCache=null; await sb.auth.signOut(); location.hash='#/teacher/login'; });
 }
 
@@ -514,7 +537,7 @@ let recoveryMode = false;
 sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ recoveryMode = true; location.hash = '#/teacher/reset'; } });
 
 function teacherLogin(err){
-  render(`<div class="card" style="max-width:440px;margin:40px auto">
+  render(`<div class="login-logo"><img src="icon.svg" alt=""><div class="bn">المنصة</div></div><div class="card" style="max-width:440px;margin:14px auto 40px">
     <div class="h1">دخول المدرس</div>
     <p class="muted">سجّل دخولك بحسابك، أو اعمل حساب جديد أول مرة. كل مدرس ليه حسابه الخاص: امتحاناته وطلبته ودرجاتهم منفصلة تمامًا عن أي مدرس تاني.</p>
     <label>البريد الإلكتروني</label><input type="email" id="em" autocomplete="username">
@@ -596,7 +619,7 @@ async function tDashboard(){
   const ex = exams.data||[], st = students.data||[], su = subs.data||[];
   const avg = su.length ? Math.round(su.reduce((a,s)=>a+(s.auto_total?s.auto_score*100/s.auto_total:0),0)/su.length) : 0;
   const inner = `
-    <div class="h1">المنصة</div>
+    <div class="h1">لوحة التحكم</div>
     <div class="card"><div class="h2">ابدأ من هنا</div><div class="flow">
       <a class="btn btn-p" href="#/teacher/new">١. اعمل امتحان وحدد الإجابات الصحيحة</a>
       <a class="btn btn-s" href="#/teacher/codes">٢. انشر الامتحان واعمل أكواد الطلبة</a>
