@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>منصة الامتحانات</title>
+<title>المنصة</title>
 <style>
 :root{--navy:#12233f;--navy2:#1d3459;--teal:#0f8b8d;--tealsoft:#e2f3f3;--gray:#f3f5f7;--ink:#1a2433;--ink2:#5c6675;--hair:#e3e7ec;--red:#b3261e;}
 *{box-sizing:border-box}
@@ -68,6 +68,10 @@ label{font-size:13px;color:var(--ink2);display:block;margin-top:12px}
 @media print{.side,.no-print{display:none!important}body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}
 .track-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.track-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}.track-head strong{font-size:18px;overflow-wrap:anywhere}.track-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.track-metrics>div{background:var(--gray);border-radius:12px;padding:12px;min-width:0}.track-metrics span,.track-metrics small{display:block;font-size:12px;color:var(--ink2)}.track-metrics b{display:block;font-size:22px;color:var(--navy)}
 
+.pw-wrap{position:relative}
+.pw-wrap input{padding-inline-end:46px}
+.pw-eye{position:absolute;inset-inline-end:6px;top:50%;transform:translateY(-50%);border:none;background:none;cursor:pointer;font-size:18px;color:var(--ink2);padding:8px;min-width:40px;min-height:40px}
+.link-btn{border:none;background:none;color:var(--teal);cursor:pointer;font:inherit;font-size:14px;text-decoration:underline;padding:4px}
 /* Student experience: light CSS-only decoration, never over the questions. */
 body.student-view{background:#f1f6fb;isolation:isolate}
 body.student-view::before,body.student-view::after{content:"";position:fixed;pointer-events:none;z-index:-1;border-radius:38px;opacity:.55;animation:study-float 12s ease-in-out infinite alternate}
@@ -116,7 +120,7 @@ body.student-view::after{width:140px;height:140px;border:22px solid #d2dcf6;bott
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="الامتحانات">
+<meta name="apple-mobile-web-app-title" content="المنصة">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 </head>
 <body>
@@ -490,19 +494,40 @@ function teacherShell(active, inner){
   on('#logout','click', async e => { e.preventDefault(); profileCache=null; await sb.auth.signOut(); location.hash='#/teacher/login'; });
 }
 
+const EYE_OPEN = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+function pwField(id, autocomplete){
+  return `<div class="pw-wrap"><input type="password" id="${id}" autocomplete="${autocomplete}"><button type="button" class="pw-eye" data-eye="${id}" aria-label="إظهار أو إخفاء كلمة السر">${EYE_OPEN}</button></div>`;
+}
+function bindEyes(){
+  on('[data-eye]','click', e => {
+    const inp = app.querySelector('#'+e.currentTarget.dataset.eye);
+    if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    e.currentTarget.innerHTML = show ? EYE_OFF : EYE_OPEN;
+    inp.focus();
+  });
+}
+
+let recoveryMode = false;
+sb.auth.onAuthStateChange(event => { if (event === 'PASSWORD_RECOVERY'){ recoveryMode = true; location.hash = '#/teacher/reset'; } });
+
 function teacherLogin(err){
   render(`<div class="card" style="max-width:440px;margin:40px auto">
     <div class="h1">دخول المدرس</div>
     <p class="muted">سجّل دخولك بحسابك، أو اعمل حساب جديد أول مرة. كل مدرس ليه حسابه الخاص: امتحاناته وطلبته ودرجاتهم منفصلة تمامًا عن أي مدرس تاني.</p>
     <label>البريد الإلكتروني</label><input type="email" id="em" autocomplete="username">
-    <label>كلمة السر</label><input type="password" id="pw" autocomplete="current-password">
+    <label>كلمة السر</label>${pwField('pw','current-password')}
     ${err?`<div class="err">${esc(err)}</div>`:''}
     <div class="actions">
       <button class="btn btn-p" id="in">دخول</button>
       <button class="btn btn-s" id="up">حساب جديد</button>
     </div>
+    <div style="margin-top:10px"><button type="button" class="link-btn" id="forgot">نسيت كلمة السر؟</button></div>
     <div class="note">حساب جديد بيدخل على طول من غير تأكيد إيميل. المنصة بتدعم أي عدد مدرسين، كل واحد بحسابه.</div>
   </div>`);
+  bindEyes();
   on('#in','click', async () => {
     const { error } = await sb.auth.signInWithPassword({ email: val('#em').trim(), password: val('#pw') });
     if (error) return teacherLogin('بيانات الدخول مش مظبوطة، أو الإيميل لسه متأكدش.');
@@ -512,6 +537,52 @@ function teacherLogin(err){
     const { error } = await sb.auth.signUp({ email: val('#em').trim(), password: val('#pw') });
     if (error) return teacherLogin(error.message);
     teacherLogin('الحساب اتعمل. سجّل دخول دلوقتي بنفس الإيميل وكلمة السر.');
+  });
+  on('#forgot','click', () => teacherForgot());
+}
+
+function teacherForgot(err, done){
+  render(`<div class="card" style="max-width:440px;margin:40px auto">
+    <div class="h1">نسيت كلمة السر</div>
+    <p class="muted">اكتب الإيميل بتاع حسابك، وهنبعتلك لينك تدخل بيه وتعمل كلمة سر جديدة.</p>
+    <label>البريد الإلكتروني</label><input type="email" id="fem" autocomplete="username">
+    ${err?`<div class="err">${esc(err)}</div>`:''}
+    ${done?`<div class="note">${esc(done)}</div>`:''}
+    <div class="actions">
+      <button class="btn btn-p" id="fsend">ابعت لينك التغيير</button>
+      <button class="btn btn-s" id="fback">رجوع للدخول</button>
+    </div>
+  </div>`);
+  on('#fback','click', () => teacherLogin());
+  on('#fsend','click', async () => {
+    const em = val('#fem').trim();
+    if (!em) return teacherForgot('اكتب الإيميل الأول.');
+    const btn = app.querySelector('#fsend'); if (btn) btn.disabled = true;
+    const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: location.origin + location.pathname });
+    if (error) return teacherForgot('حصلت مشكلة في الإرسال. تأكد من الإيميل وجرّب تاني.');
+    teacherForgot('', 'لو الإيميل ده مسجل عندنا، هيوصلك لينك خلال دقايق. افتحه من نفس المتصفح وهتلاقي صفحة تعمل منها كلمة سر جديدة. شيك على البريد المزعج (Spam) كمان.');
+  });
+}
+
+function teacherReset(err){
+  render(`<div class="card" style="max-width:440px;margin:40px auto">
+    <div class="h1">كلمة سر جديدة</div>
+    <p class="muted">اختار كلمة سر جديدة لحسابك (٦ حروف على الأقل).</p>
+    <label>كلمة السر الجديدة</label>${pwField('pw1','new-password')}
+    <label>تأكيد كلمة السر</label>${pwField('pw2','new-password')}
+    ${err?`<div class="err">${esc(err)}</div>`:''}
+    <div class="actions"><button class="btn btn-p" id="rsave">احفظ كلمة السر الجديدة</button></div>
+  </div>`);
+  bindEyes();
+  on('#rsave','click', async () => {
+    const a = val('#pw1'), b = val('#pw2');
+    if (a.length < 6) return teacherReset('كلمة السر لازم تكون ٦ حروف على الأقل.');
+    if (a !== b) return teacherReset('كلمتَي السر مش زي بعض.');
+    const btn = app.querySelector('#rsave'); if (btn) btn.disabled = true;
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) return teacherReset('مش قادرين نحفظ كلمة السر. افتح اللينك اللي وصلك على الإيميل من الأول وجرّب تاني.');
+    recoveryMode = false;
+    location.hash = '#/teacher';
   });
 }
 
@@ -525,7 +596,7 @@ async function tDashboard(){
   const ex = exams.data||[], st = students.data||[], su = subs.data||[];
   const avg = su.length ? Math.round(su.reduce((a,s)=>a+(s.auto_total?s.auto_score*100/s.auto_total:0),0)/su.length) : 0;
   const inner = `
-    <div class="h1">منصة الامتحانات</div>
+    <div class="h1">المنصة</div>
     <div class="card"><div class="h2">ابدأ من هنا</div><div class="flow">
       <a class="btn btn-p" href="#/teacher/new">١. اعمل امتحان وحدد الإجابات الصحيحة</a>
       <a class="btn btn-s" href="#/teacher/codes">٢. انشر الامتحان واعمل أكواد الطلبة</a>
@@ -1168,6 +1239,7 @@ async function tSettings(){
 // ============ ROUTER ============
 async function route(){
   const h = location.hash || '#/';
+  if (location.hash.includes('type=recovery')) recoveryMode = true;
   const openTok = new URLSearchParams(location.search).get('open');
   if (openTok && !studentState) return openLanding(openTok);
   document.body.classList.toggle('student-view',!h.startsWith('#/teacher'));
@@ -1177,6 +1249,8 @@ async function route(){
   if (h === '#/exam/q') return studentState ? studentExam() : studentLanding();
   if (h === '#/done') return studentState ? studentDone() : studentLanding();
   if (h === '#/teacher/login') return teacherLogin();
+  if (h === '#/teacher/forgot') return teacherForgot();
+  if (h === '#/teacher/reset') return recoveryMode ? teacherReset() : teacherLogin();
   if (h === '#/teacher') return tDashboard();
   if (h === '#/teacher/exams') return tExams();
   if (h === '#/teacher/new') return tBuilder(null);
