@@ -1424,6 +1424,8 @@ if (SUPABASE_URL.startsWith('__')){
 <script>
 if('serviceWorker' in navigator){
 window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});
+var swRefreshing=false;
+navigator.serviceWorker.addEventListener('controllerchange',function(){if(swRefreshing)return;swRefreshing=true;location.reload();});
 }
 </script>
 </body>
