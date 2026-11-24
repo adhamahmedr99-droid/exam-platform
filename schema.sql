@@ -389,7 +389,7 @@ begin
   if exists (select 1 from video_students where username = p_username) then
     return jsonb_build_object('ok', false, 'error', 'taken'); end if;
   insert into video_students (teacher_id, name, username, pass_hash)
-  values (auth.uid(), left(trim(coalesce(p_name, '')), 120), p_username, crypt(p_password, gen_salt('bf')));
+  values (auth.uid(), left(trim(coalesce(p_name, '')), 120), p_username, extensions.crypt(p_password, extensions.gen_salt('bf')));
   return jsonb_build_object('ok', true);
 end $$;
 
@@ -399,7 +399,7 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 begin
   if length(coalesce(p_password, '')) < 4 then
     return jsonb_build_object('ok', false, 'error', 'bad_password'); end if;
-  update video_students set pass_hash = crypt(p_password, gen_salt('bf'))
+  update video_students set pass_hash = extensions.crypt(p_password, extensions.gen_salt('bf'))
   where id = p_student and teacher_id = auth.uid();
   if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
   return jsonb_build_object('ok', true);
@@ -411,7 +411,7 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 declare st video_students; vs jsonb;
 begin
   select * into st from video_students where username = lower(trim(coalesce(p_username, '')));
-  if not found or st.pass_hash <> crypt(coalesce(p_password, ''), st.pass_hash) then
+  if not found or st.pass_hash <> extensions.crypt(coalesce(p_password, ''), st.pass_hash) then
     return jsonb_build_object('ok', false, 'error', 'invalid'); end if;
   if not st.active then return jsonb_build_object('ok', false, 'error', 'inactive'); end if;
   select jsonb_agg(jsonb_build_object('id', v.id, 'title', v.title, 'url', v.url) order by v.ord, v.created_at)
