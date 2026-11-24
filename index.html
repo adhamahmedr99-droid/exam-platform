@@ -129,6 +129,8 @@ body.student-view::after{width:140px;height:140px;border:22px solid #d2dcf6;bott
 @media(max-width:420px){.student-hero{padding:24px 20px}.student-hero .h1{font-size:25px}.student-view .wrap{padding:12px}.student-view .card{padding:16px}.student-view .topbar{padding:14px}.question-heading .muted{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.student-view::before,.student-view::after,.student-view .timer.low,#confirm{animation:none!important}.student-view *{scroll-behavior:auto!important;transition:none!important}}
 
+.vid-frame{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#0b0f1a;margin-top:10px}
+.vid-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#12233f">
@@ -232,7 +234,7 @@ async function openLanding(token, err, info){
 }
 
 // ============ STUDENT ============
-function studentLanding(err){
+function studentLanding(err, verr){
   document.body.classList.add('student-view');
   render(`
   <header class="student-hero">
@@ -248,6 +250,16 @@ function studentLanding(err){
     <input type="text" id="code" class="ltr" placeholder="مثال: K7QX2MB4TP9W" autocomplete="off">
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
     <div class="actions"><button class="btn btn-p" id="go">دخول</button></div>
+  </div>
+  <div class="card">
+    <div class="h2">فيديوهات الشرح <span class="muted" style="font-size:13px">(للمشتركين)</span></div>
+    <p class="muted">لو اشتركت في فيديوهات الشرح، ادخل باليوزر والباسورد اللي المدرس دهوملك.</p>
+    <label>اسم المستخدم</label>
+    <input type="text" id="v-user" class="ltr" autocomplete="off">
+    <label>كلمة السر</label>
+    ${pwField('v-pass','current-password')}
+    ${verr ? `<div class="err">${esc(verr)}</div>` : ''}
+    <div class="actions"><button class="btn btn-s" id="v-go">دخول للفيديوهات</button></div>
   </div>
   <div class="card">
     <div class="h2">إزاي بتمشي الأمور؟</div>
@@ -272,6 +284,18 @@ function studentLanding(err){
       return studentLanding(m[data && data.error] || 'حصلت مشكلة، جرب تاني.');
     }
     startStudentSession(data);
+  });
+  bindEyes();
+  on('#v-go','click', async () => {
+    const u = val('#v-user').trim(), p = val('#v-pass');
+    if (!u || !p) return studentLanding(null, 'اكتب اسم المستخدم وكلمة السر.');
+    const { data, error } = await sb.rpc('video_login', { p_username: u, p_password: p });
+    if (error || !data || !data.ok) {
+      const m = { invalid: 'اليوزر أو الباسورد مش مظبوطين.', inactive: 'الاشتراك ده متوقف حاليًا. كلم مدرسك.' };
+      return studentLanding(null, m[data && data.error] || 'حصلت مشكلة، جرب تاني.');
+    }
+    videoState = { name: data.name, videos: data.videos || [], open: -1 };
+    location.hash = '#/videos';
   });
 }
 
@@ -494,6 +518,7 @@ const NAV_GROUPS = [
   ['الرئيسية', [['#/teacher','لوحة التحكم','🏠']]],
   ['الامتحانات', [['#/teacher/exams','الامتحانات','📝'],['#/teacher/new','امتحان جديد','➕'],['#/teacher/codes','الأكواد','🔑']]],
   ['الطلبة والدرجات', [['#/teacher/students','الطلبة','🎓'],['#/teacher/tracking','متابعة الطلبة','👀'],['#/teacher/results','النتايج','📋'],['#/teacher/analytics','التحليلات','📈']]],
+  ['الفيديوهات', [['#/teacher/videos','فيديوهات الشرح','🎬']]]],
   ['التقارير', [['#/teacher/reports','تقارير أولياء الأمور','💬']]],
   ['الحساب', [['#/teacher/settings','الإعدادات','⚙️']]]
 ];
@@ -1259,6 +1284,106 @@ async function tSettings(){
   });
 }
 
+// ============ VIDEO LESSONS ============
+let videoState = null;
+function ytEmbed(url){
+  const m = (url||'').match(/(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{6,})/);
+  return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] : null;
+}
+function driveEmbed(url){
+  const m = (url||'').match(/drive\.google\.com\/file\/d\/([\w-]+)/);
+  return m ? 'https://drive.google.com/file/d/' + m[1] + '/preview' : null;
+}
+function videoFrame(url){
+  const y = ytEmbed(url), d = driveEmbed(url);
+  if (y || d) return `<div class="vid-frame"><iframe src="${y||d}" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`;
+  return `<div class="actions"><a class="btn btn-p" href="${esc(url)}" target="_blank" rel="noopener">افتح الفيديو</a></div>`;
+}
+function studentVideos(){
+  if (!videoState){ location.hash = '#/'; return; }
+  document.body.classList.add('student-view');
+  render(`
+  <header class="student-hero">
+    <span class="study-art" aria-hidden="true">✦ ▤ ◇</span>
+    <span class="study-tag"><i aria-hidden="true"></i>فيديوهات الشرح</span>
+    <h1 class="h1">أهلًا ${esc(videoState.name || 'بيك')}!</h1>
+    <p>فيديوهات الشرح المتاحة ليك كلها هنا.</p>
+  </header>
+  ${videoState.videos.length ? videoState.videos.map((v,i)=>`
+  <div class="card">
+    <div class="h2" style="margin-top:0">${esc(v.title)}</div>
+    ${videoState.open === i ? videoFrame(v.url) : `<div class="actions"><button class="btn btn-p" data-play="${i}">شغّل الفيديو</button></div>`}
+  </div>`).join('') : '<div class="note">مفيش فيديوهات متاحة لسه. كلم مدرسك.</div>'}
+  <div class="actions"><a class="btn btn-t" href="#/">رجوع لبوابة الامتحانات</a></div>
+  `);
+  on('[data-play]','click', e => { videoState.open = +e.currentTarget.dataset.play; studentVideos(); });
+}
+
+async function tVideos(){
+  const u = await requireTeacher(); if (!u) return;
+  const [{ data: vids }, { data: subs }] = await Promise.all([
+    sb.from('videos').select('*').order('ord').order('created_at'),
+    sb.from('video_students').select('id,name,username,active,created_at').order('created_at')
+  ]);
+  teacherShell('#/teacher/videos', `
+    <div class="h1">فيديوهات الشرح</div>
+    <div class="card">
+      <div class="h2" style="margin-top:0">أضف فيديو</div>
+      <p class="muted">حط لينك الفيديو (يوتيوب "غير مدرج" أو جوجل درايف). بيظهر للطلبة المشتركين بس.</p>
+      <label>عنوان الفيديو</label><input type="text" id="vd-title" placeholder="مثال: مراجعة الوحدة الأولى">
+      <label>لينك الفيديو</label><input type="text" id="vd-url" class="ltr" placeholder="https://">
+      <div id="vd-err"></div>
+      <div class="actions"><button class="btn btn-p" id="vd-add">أضف الفيديو</button></div>
+    </div>
+    ${vids && vids.length ? `<div class="card"><div class="h2" style="margin-top:0">الفيديوهات (${vids.length})</div>${vids.map(v=>`
+      <div class="row"><div><div class="nm">${esc(v.title)} ${v.active?'':'<span class="muted">(مخفي)</span>'}</div><div class="dt" style="direction:ltr;text-align:right">${esc(v.url.length>60?v.url.slice(0,60)+'…':v.url)}</div></div>
+      <div class="actions" style="margin:0">
+        <button class="btn btn-s btn-sm" data-vtog="${v.id}" data-a="${v.active?0:1}">${v.active?'إخفاء':'إظهار'}</button>
+        <button class="btn btn-g btn-sm" data-vdel="${v.id}">حذف</button>
+      </div></div>`).join('')}</div>` : '<div class="note">مفيش فيديوهات لسه.</div>'}
+    <div class="card">
+      <div class="h2" style="margin-top:0">الطلبة المشتركين</div>
+      <p class="muted">اعمل يوزر وباسورد لكل طالب دفع الاشتراك (الدفع فودافون كاش أو إنستاباي خارج المنصة). تقدر توقف اشتراك أي طالب في أي وقت.</p>
+      <label>اسم الطالب</label><input type="text" id="vs-name">
+      <label>اسم المستخدم (حروف أو أرقام إنجليزي من غير مسافات)</label><input type="text" id="vs-user" class="ltr" autocomplete="off">
+      <label>كلمة السر</label><input type="text" id="vs-pass" class="ltr" autocomplete="off">
+      <div id="vs-err"></div>
+      <div class="actions"><button class="btn btn-p" id="vs-add">أضف المشترك</button></div>
+    </div>
+    ${subs && subs.length ? `<div class="card">${subs.map(s=>`
+      <div class="row"><div><div class="nm">${esc(s.name||s.username)} ${s.active?'':'<span class="muted">(موقوف)</span>'}</div><div class="dt">اليوزر: <span class="ltr">${esc(s.username)}</span></div></div>
+      <div class="actions" style="margin:0">
+        <button class="btn btn-s btn-sm" data-stog="${s.id}" data-a="${s.active?0:1}">${s.active?'إيقاف':'تفعيل'}</button>
+        <button class="btn btn-s btn-sm" data-spass="${s.id}">باسورد جديد</button>
+        <button class="btn btn-g btn-sm" data-ssdel="${s.id}">حذف</button>
+      </div></div>`).join('')}</div>` : '<div class="note">مفيش مشتركين لسه.</div>'}
+  `);
+  on('#vd-add','click', async () => {
+    const t = val('#vd-title').trim(), url = val('#vd-url').trim();
+    if (!t || !url){ app.querySelector('#vd-err').innerHTML = '<div class="err">اكتب العنوان واللينك.</div>'; return; }
+    if (!/^https?:\/\//i.test(url)){ app.querySelector('#vd-err').innerHTML = '<div class="err">اللينك لازم يبدأ بـ https://</div>'; return; }
+    const { error } = await sb.from('videos').insert({ teacher_id: u.id, title: t, url, ord: (vids||[]).length });
+    if (error){ app.querySelector('#vd-err').innerHTML = '<div class="err">حصلت مشكلة في الحفظ، جرب تاني.</div>'; return; }
+    tVideos();
+  });
+  on('[data-vtog]','click', async e => { await sb.from('videos').update({ active: e.currentTarget.dataset.a === '1' }).eq('id', e.currentTarget.dataset.vtog); tVideos(); });
+  on('[data-vdel]','click', async e => { await sb.from('videos').delete().eq('id', e.currentTarget.dataset.vdel); tVideos(); });
+  on('#vs-add','click', async () => {
+    const { data, error } = await sb.rpc('create_video_student', { p_name: val('#vs-name').trim(), p_username: val('#vs-user').trim(), p_password: val('#vs-pass') });
+    const m = { bad_username:'اسم المستخدم لازم يكون 3 حروف إنجليزي أو أرقام على الأقل من غير مسافات.', bad_password:'كلمة السر لازم تكون 4 حروف على الأقل.', taken:'اسم المستخدم ده متاخد، جرب اسم تاني.', auth:'سجّل دخول من الأول.' };
+    if (error || !data || !data.ok){ app.querySelector('#vs-err').innerHTML = '<div class="err">' + (m[data&&data.error] || 'حصلت مشكلة، جرب تاني.') + '</div>'; return; }
+    tVideos();
+  });
+  on('[data-stog]','click', async e => { await sb.from('video_students').update({ active: e.currentTarget.dataset.a === '1' }).eq('id', e.currentTarget.dataset.stog); tVideos(); });
+  on('[data-ssdel]','click', async e => { await sb.from('video_students').delete().eq('id', e.currentTarget.dataset.ssdel); tVideos(); });
+  on('[data-spass]','click', async e => {
+    const pw = prompt('اكتب كلمة السر الجديدة للطالب ده:');
+    if (pw === null) return;
+    const { data } = await sb.rpc('reset_video_student_password', { p_student: e.currentTarget.dataset.spass, p_password: pw });
+    alert(data && data.ok ? 'كلمة السر اتغيرت.' : 'ماتغيرتش: لازم تكون 4 حروف على الأقل.');
+  });
+}
+
 // ============ ROUTER ============
 async function route(){
   const h = location.hash || '#/';
@@ -1268,6 +1393,7 @@ async function route(){
   document.body.classList.toggle('student-view',!h.startsWith('#/teacher'));
   clearInterval(studentState?.timerIv);
   if (h === '#/' || h === '#') return studentLanding();
+  if (h === '#/videos') return studentVideos();
   if (h === '#/exam') return studentState ? studentInfo() : studentLanding();
   if (h === '#/exam/q') return studentState ? studentExam() : studentLanding();
   if (h === '#/done') return studentState ? studentDone() : studentLanding();
@@ -1279,6 +1405,7 @@ async function route(){
   if (h === '#/teacher/new') return tBuilder(null);
   if (h.startsWith('#/teacher/edit/')) return tBuilder(h.split('/')[3]);
   if (h === '#/teacher/students') return tStudents();
+  if (h === '#/teacher/videos') return tVideos();
   if (h.startsWith('#/teacher/codes')) return tCodes(h.split('/')[3]);
   if (h.startsWith('#/teacher/tracking')) return tTracking(h.split('/')[3]);
   if (h === '#/teacher/results') return tResults();
