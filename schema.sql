@@ -346,3 +346,77 @@ begin
     'saved', '{}'::jsonb
   );
 end $$;
+
+
+-- Migration: video lessons with manual subscriptions (teacher-activated, paid off-platform)
+-- Safe to run more than once.
+create extension if not exists pgcrypto;
+
+create table if not exists videos (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  url text not null,
+  ord int not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table videos enable row level security;
+create policy videos_teacher on videos for all using (auth.uid() = teacher_id) with check (auth.uid() = teacher_id);
+
+create table if not exists video_students (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references auth.users(id) on delete cascade,
+  name text not null default '',
+  username text not null unique,
+  pass_hash text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+alter table video_students enable row level security;
+create policy video_students_teacher on video_students for all using (auth.uid() = teacher_id) with check (auth.uid() = teacher_id);
+
+-- Teacher creates a subscriber (password hashed server-side; username globally unique)
+create or replace function create_video_student(p_name text, p_username text, p_password text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return jsonb_build_object('ok', false, 'error', 'auth'); end if;
+  p_username := lower(trim(coalesce(p_username, '')));
+  if length(p_username) < 3 or p_username !~ '^[a-z0-9_.]+$' then
+    return jsonb_build_object('ok', false, 'error', 'bad_username'); end if;
+  if length(coalesce(p_password, '')) < 4 then
+    return jsonb_build_object('ok', false, 'error', 'bad_password'); end if;
+  if exists (select 1 from video_students where username = p_username) then
+    return jsonb_build_object('ok', false, 'error', 'taken'); end if;
+  insert into video_students (teacher_id, name, username, pass_hash)
+  values (auth.uid(), left(trim(coalesce(p_name, '')), 120), p_username, crypt(p_password, gen_salt('bf')));
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Teacher resets a subscriber's password
+create or replace function reset_video_student_password(p_student uuid, p_password text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  if length(coalesce(p_password, '')) < 4 then
+    return jsonb_build_object('ok', false, 'error', 'bad_password'); end if;
+  update video_students set pass_hash = crypt(p_password, gen_salt('bf'))
+  where id = p_student and teacher_id = auth.uid();
+  if not found then return jsonb_build_object('ok', false, 'error', 'not_found'); end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Student side: verify credentials, return this student's teacher videos (no table access)
+create or replace function video_login(p_username text, p_password text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare st video_students; vs jsonb;
+begin
+  select * into st from video_students where username = lower(trim(coalesce(p_username, '')));
+  if not found or st.pass_hash <> crypt(coalesce(p_password, ''), st.pass_hash) then
+    return jsonb_build_object('ok', false, 'error', 'invalid'); end if;
+  if not st.active then return jsonb_build_object('ok', false, 'error', 'inactive'); end if;
+  select jsonb_agg(jsonb_build_object('id', v.id, 'title', v.title, 'url', v.url) order by v.ord, v.created_at)
+  into vs from videos v where v.teacher_id = st.teacher_id and v.active;
+  return jsonb_build_object('ok', true, 'name', st.name, 'videos', coalesce(vs, '[]'::jsonb));
+end $$;
+
+grant select, insert, update, delete on videos, video_students to authenticated;
