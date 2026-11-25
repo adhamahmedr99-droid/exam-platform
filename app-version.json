@@ -1,0 +1,12 @@
+{
+  "teacher": {
+    "versionCode": 7,
+    "versionName": "3.2",
+    "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.2/teacher-app-v3.2-arm64.apk"
+  },
+  "student": {
+    "versionCode": 7,
+    "versionName": "3.2",
+    "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.2/student-app-v3.2-arm64.apk"
+  }
+}
