@@ -773,6 +773,15 @@ async function tBuilder(editId){
       <label>ترتيب عشوائي للاختيارات</label><select id="f-shc"><option value="1" ${d.shuffleC?'selected':''}>أيوه</option><option value="0" ${!d.shuffleC?'selected':''}>لأ</option></select>
       <label>الطالب يشوف نتيجته بعد التسليم</label><select id="f-show"><option value="1" ${d.showResult?'selected':''}>أيوه</option><option value="0" ${!d.showResult?'selected':''}>لأ</option></select>
     </div>
+    <div class="card" id="photo-import">
+      <div class="h2">إضافة أسئلة من صور</div>
+      <p class="muted">صوّر ورقة الامتحان أو صفحة الكتاب، أو اختار صور من المعرض (لحد ٦ صور مرة واحدة). الذكاء الاصطناعي بيقرا الأسئلة ويحولها لصيغة الامتحان، والأسئلة بتتضاف للمسودة بس. راجعها وبعدين احفظ بنفسك. لو الإجابة مش معلّمة في الصورة بيختارها بنفسه وبننبهك عليها.</p>
+      <div class="actions">
+        <label class="btn btn-p" style="cursor:pointer">صوّر بالكاميرا<input id="photo-cam" type="file" accept="image/*" capture="environment" style="display:none"></label>
+        <label class="btn btn-s" style="cursor:pointer">اختار صور من المعرض<input id="photo-files" type="file" accept="image/*" multiple style="display:none"></label>
+      </div>
+      <div id="photo-status" role="status" aria-live="polite"></div>
+    </div>
     <div class="card" id="bulk-import">
       <div class="h2">استيراد أسئلة من ملف</div>
       <p class="muted">اختار ملف JSON اللي جهزتهولك، أو الصق محتواه. الأسئلة هتتضاف للمسودة بس، ومش هتتحفظ ولا تتنشر إلا لما تضغط حفظ بنفسك. الملف فيه الإجابات الصحيحة، احتفظ بيه للمدرس بس.</p>
@@ -817,6 +826,40 @@ async function tBuilder(editId){
       app.querySelector('#bulk-import').scrollIntoView({block:'start'});
     } catch(err) { app.querySelector('#import-status').innerHTML='<div class="err">'+esc(err.message)+'</div>'; }
   };
+  const shrinkImage=file=>new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{const m=1600,k=Math.min(1,m/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res({mime:'image/jpeg',data:c.toDataURL('image/jpeg',0.82).split(',')[1]});};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('مقدرتش أفتح الصورة.'));};
+    img.src=url;
+  });
+  const photoImport=async files=>{
+    const st=app.querySelector('#photo-status');
+    files=[...files].slice(0,6); if(!files.length) return;
+    st.innerHTML='<div class="note">بقرا الصور وبحولها لأسئلة... ممكن ياخد لحد دقيقة.</div>';
+    try{
+      const images=await Promise.all(files.map(shrinkImage));
+      const {data:ses}=await sb.auth.getSession(); if(!ses?.session) throw new Error('لازم تسجل دخول كمدرس الأول.');
+      const r=await fetch(SUPABASE_URL+'/functions/v1/exam-from-photo',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ses.session.access_token,'apikey':SUPABASE_ANON_KEY},body:JSON.stringify({images})});
+      const out=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(r.status===401?'سجّل دخول تاني وجرّب.':r.status===413?'الصور كبيرة، جرّب صور أقل.':'الخدمة مش متاحة دلوقتي، جرّب تاني بعد شوية.');
+      if(!Array.isArray(out.questions)||!out.questions.length) throw new Error('مش لاقي أسئلة اختيار من متعدد في الصور. صوّر أوضح وجرّب تاني.');
+      const rows=out.questions.filter(q=>q&&Array.isArray(q.choices));
+      const start=d.qs.length;
+      const guessed=rows.map((q,i)=>q.answer_source==='guessed'?start+i+1:0).filter(Boolean);
+      const keep=rows.map(q=>({text:q.text,choices:q.choices,correct:q.correct,points:1}));
+      syncDraft();
+      const imported=parseExamImport(JSON.stringify({title:out.title||'',subject:out.subject||'',questions:keep}));
+      if(d.qs.length+imported.questions.length>100) throw new Error('الحد الأقصى للمسودة ١٠٠ سؤال.');
+      d.qs.push(...imported.questions);
+      if(!d.title.trim()) d.title=imported.title;
+      if(!d.subject.trim()) d.subject=imported.subject;
+      await tBuilder(editId);
+      app.querySelector('#photo-status').innerHTML='<div class="ok">اتضاف '+imported.questions.length+' سؤال من الصور للمسودة.</div>'+(guessed.length?'<div class="note">الإجابة الصحيحة للأسئلة رقم '+guessed.join('، ')+' مكانتش معلّمة في الصورة، الذكاء الاصطناعي اختارها. راجعها كلها قبل الحفظ.</div>':'')+'<div class="note">راجع الأسئلة والاختيارات كويس (القراءة من الصور ممكن تغلط)، وبعدين اضغط احفظ الامتحان.</div>';
+      app.querySelector('#photo-import').scrollIntoView({block:'start'});
+    }catch(err){app.querySelector('#photo-status').innerHTML='<div class="err">'+esc(err.message||'حصلت مشكلة، جرّب تاني.')+'</div>';}
+  };
+  on('#photo-cam','change',e=>{photoImport(e.target.files);e.target.value='';});
+  on('#photo-files','change',e=>{photoImport(e.target.files);e.target.value='';});
   on('#import-paste','click',()=>applyImport(val('#import-json')));
   on('#import-file','change',async e=>{
     const file=e.target.files?.[0]; if(!file) return;
