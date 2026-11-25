@@ -1,4 +1,4 @@
-const CACHE = 'exam-platform-v5';
+const CACHE = 'exam-platform-v6';
 const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
