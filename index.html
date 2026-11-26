@@ -847,10 +847,25 @@ async function tBuilder(editId){
     try{
       const images=await Promise.all(files.map(shrinkImage));
       const {data:ses}=await sb.auth.getSession(); if(!ses?.session) throw new Error('لازم تسجل دخول كمدرس الأول.');
-      const r=await fetch(SUPABASE_URL+'/functions/v1/exam-from-photo',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+ses.session.access_token,'apikey':SUPABASE_ANON_KEY},body:JSON.stringify({images})});
-      const out=await r.json().catch(()=>({}));
-      if(!r.ok) throw new Error(r.status===401?'سجّل دخول تاني وجرّب.':r.status===413?'الصور كبيرة، جرّب صور أقل.':'الخدمة مش متاحة دلوقتي، جرّب تاني بعد شوية.');
-      if(!Array.isArray(out.questions)||!out.questions.length) throw new Error('مش لاقي أسئلة اختيار من متعدد في الصور. صوّر أوضح وجرّب تاني.');
+      const callOne=async img=>{
+        const ac=new AbortController(), tm=setTimeout(()=>ac.abort(),95000);
+        try{
+          const r=await fetch(SUPABASE_URL+'/functions/v1/exam-from-photo',{method:'POST',signal:ac.signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+ses.session.access_token,'apikey':SUPABASE_ANON_KEY},body:JSON.stringify({images:[img]})});
+          const o=await r.json().catch(()=>({}));
+          if(!r.ok){const e=new Error(r.status===401?'سجّل دخول تاني وجرّب.':r.status===413?'الصورة كبيرة، جرّب صورة أصغر.':r.status===429?'الخدمة مزدحمة دلوقتي، استنى دقيقة وجرّب تاني.':r.status===502?'الذكاء الاصطناعي اتأخر في الرد، جرّب تاني بصورة واحدة.':'الخدمة مش متاحة دلوقتي، جرّب تاني بعد شوية.');e.fatal=r.status===401;throw e;}
+          return o;
+        }catch(err){
+          if(err&&err.name==='AbortError'){const e=new Error('الصورة خدت وقت طويل. جرّب صورة أوضح أو أصغر.');throw e;}
+          if(err instanceof TypeError){throw new Error('مفيش اتصال بالإنترنت أو النت ضعيف. جرّب تاني.');}
+          throw err;
+        }finally{clearTimeout(tm);}
+      };
+      const out={title:'',subject:'',questions:[]}; let done=0, failed=[], next=0;
+      const upd=()=>{st.innerHTML='<div class="note">بقرا الصور... خلّصت '+done+' من '+images.length+'. ممكن ياخد دقيقة لكل صورة.</div>';};
+      upd();
+      const worker=async()=>{while(next<images.length){const i=next++;try{const o=await callOne(images[i]);if(Array.isArray(o.questions))out.questions.push(...o.questions);if(!out.title&&o.title)out.title=o.title;if(!out.subject&&o.subject)out.subject=o.subject;}catch(e){if(e.fatal)throw e;failed.push({i:i+1,msg:e.message});}done++;upd();}};
+      await Promise.all([worker(),worker()]);
+      if(!out.questions.length&&failed.length) throw new Error(failed[0].msg);
       const rows=out.questions.filter(q=>q&&Array.isArray(q.choices));
       const start=d.qs.length;
       const guessed=rows.map((q,i)=>q.answer_source==='guessed'?start+i+1:0).filter(Boolean);
@@ -862,7 +877,7 @@ async function tBuilder(editId){
       if(!d.title.trim()) d.title=imported.title;
       if(!d.subject.trim()) d.subject=imported.subject;
       await tBuilder(editId);
-      app.querySelector('#photo-status').innerHTML='<div class="ok">اتضاف '+imported.questions.length+' سؤال من الصور للمسودة.</div>'+(guessed.length?'<div class="note">الإجابة الصحيحة للأسئلة رقم '+guessed.join('، ')+' مكانتش معلّمة في الصورة، الذكاء الاصطناعي اختارها. راجعها كلها قبل الحفظ.</div>':'')+'<div class="note">راجع الأسئلة والاختيارات كويس (القراءة من الصور ممكن تغلط)، وبعدين اضغط احفظ الامتحان.</div>';
+      app.querySelector('#photo-status').innerHTML='<div class="ok">اتضاف '+imported.questions.length+' سؤال من الصور للمسودة.</div>'+(failed.length?'<div class="err">الصور رقم '+failed.map(f=>f.i).join('، ')+' ماتقراتش ('+esc(failed[0].msg)+') جرّبهم تاني.</div>':'')+(guessed.length?'<div class="note">الإجابة الصحيحة للأسئلة رقم '+guessed.join('، ')+' مكانتش معلّمة في الصورة، الذكاء الاصطناعي اختارها. راجعها كلها قبل الحفظ.</div>':'')+'<div class="note">راجع الأسئلة والاختيارات كويس (القراءة من الصور ممكن تغلط)، وبعدين اضغط احفظ الامتحان.</div>';
       app.querySelector('#photo-import').scrollIntoView({block:'start'});
     }catch(err){app.querySelector('#photo-status').innerHTML='<div class="err">'+esc(err.message||'حصلت مشكلة، جرّب تاني.')+'</div>';}
   };
