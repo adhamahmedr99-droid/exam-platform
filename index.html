@@ -299,7 +299,7 @@ function studentLanding(err, verr){
     if (!u || !p) return studentLanding(null, 'اكتب اسم المستخدم وكلمة السر.');
     const { data, error } = await sb.rpc('video_login', { p_username: u, p_password: p });
     if (error || !data || !data.ok) {
-      const m = { invalid: 'اليوزر أو الباسورد مش مظبوطين.', inactive: 'الاشتراك ده متوقف حاليًا. كلم مدرسك.' };
+      const m = { invalid: 'اليوزر أو الباسورد مش مظبوطين.', inactive: 'الاشتراك ده متوقف حاليًا. كلم مدرسك.', throttled: 'محاولات كتير غلط. استنى ١٠ دقايق وجرّب تاني.' };
       return studentLanding(null, m[data && data.error] || 'حصلت مشكلة، جرب تاني.');
     }
     videoState = { name: data.name, videos: data.videos || [], open: -1 };
@@ -344,10 +344,13 @@ function saveAnswer(qid,value){
   saveStatus('جاري حفظ إجاباتك…');
   const pending=previous.catch(()=>{}).then(async()=>{
     const {data,error}=await sb.rpc('save_answer',{p_session:sessionId,p_question:qid,p_answer:value});
+    if(data && data.ok===false && data.error==='time_expired'){studentState.expired=true;failedAnswers.delete(qid);return;}
+    if(data && data.ok===false && data.error==='bad_question'){failedAnswers.delete(qid);return;}
     if(error || (data && data.ok===false)) throw new Error('save failed');
     failedAnswers.delete(qid);
   }).catch(()=>{failedAnswers.set(qid,value);}).finally(()=>{
     if(answerSaves.get(qid)===pending)answerSaves.delete(qid);
+    if(studentState.expired && !studentState.submitting){studentState.expired=false;saveStatus('الوقت خلص، بنسلّم الامتحان…');doSubmit(true);return;}
     if(!answerSaves.size && !answerTimers.size)saveStatus(failedAnswers.size?'في إجابات لسه متحفظتش. اتأكد من اتصالك قبل التسليم.':'إجاباتك اتحفظت تلقائيًا.');
   });
   answerSaves.set(qid,pending);
@@ -1435,18 +1438,20 @@ async function tVideos(){
   on('[data-vtog]','click', async e => { await sb.from('videos').update({ active: e.currentTarget.dataset.a === '1' }).eq('id', e.currentTarget.dataset.vtog); tVideos(); });
   on('[data-vdel]','click', async e => { await sb.from('videos').delete().eq('id', e.currentTarget.dataset.vdel); tVideos(); });
   on('#vs-add','click', async () => {
+    if (val('#vs-pass').length < 8) { app.querySelector('#vs-err').innerHTML = '<div class="err">كلمة السر لازم تكون 8 حروف على الأقل.</div>'; return; }
     const { data, error } = await sb.rpc('create_video_student', { p_name: val('#vs-name').trim(), p_username: val('#vs-user').trim(), p_password: val('#vs-pass') });
-    const m = { bad_username:'اسم المستخدم لازم يكون 3 حروف إنجليزي أو أرقام على الأقل من غير مسافات.', bad_password:'كلمة السر لازم تكون 4 حروف على الأقل.', taken:'اسم المستخدم ده متاخد، جرب اسم تاني.', auth:'سجّل دخول من الأول.' };
+    const m = { bad_username:'اسم المستخدم لازم يكون 3 حروف إنجليزي أو أرقام على الأقل من غير مسافات.', bad_password:'كلمة السر لازم تكون 8 حروف على الأقل.', taken:'اسم المستخدم ده متاخد، جرب اسم تاني.', auth:'سجّل دخول من الأول.' };
     if (error || !data || !data.ok){ app.querySelector('#vs-err').innerHTML = '<div class="err">' + (m[data&&data.error] || 'حصلت مشكلة، جرب تاني.') + '</div>'; return; }
     tVideos();
   });
   on('[data-stog]','click', async e => { await sb.from('video_students').update({ active: e.currentTarget.dataset.a === '1' }).eq('id', e.currentTarget.dataset.stog); tVideos(); });
   on('[data-ssdel]','click', async e => { await sb.from('video_students').delete().eq('id', e.currentTarget.dataset.ssdel); tVideos(); });
   on('[data-spass]','click', async e => {
-    const pw = prompt('اكتب كلمة السر الجديدة للطالب ده:');
+    const pw = prompt('اكتب كلمة السر الجديدة للطالب ده (٨ حروف على الأقل):');
     if (pw === null) return;
+    if (pw.length < 8) { alert('كلمة السر لازم تكون 8 حروف على الأقل.'); return; }
     const { data } = await sb.rpc('reset_video_student_password', { p_student: e.currentTarget.dataset.spass, p_password: pw });
-    alert(data && data.ok ? 'كلمة السر اتغيرت.' : 'ماتغيرتش: لازم تكون 4 حروف على الأقل.');
+    alert(data && data.ok ? 'كلمة السر اتغيرت.' : 'ماتغيرتش: لازم تكون 8 حروف على الأقل.');
   });
 }
 
