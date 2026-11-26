@@ -132,7 +132,14 @@ body.student-view::after{width:140px;height:140px;border:22px solid #d2dcf6;bott
 .vid-frame{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#0b0f1a;margin-top:10px}
 .vid-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 </style>
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" id="mf" href="manifest.webmanifest">
+<meta name="theme-color" content="#12233f">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>
+(function(){var h=location.hash||'';if(h.indexOf('#/teacher')===0){document.getElementById('mf').setAttribute('href','manifest-teacher.webmanifest');}})();
+window.__deferredInstall=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__deferredInstall=e;});
+</script>
 <meta name="theme-color" content="#12233f">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -270,6 +277,7 @@ function studentLanding(err, verr){
       <li>إجاباتك بتتحفظ على السيرفر أول بأول، حتى لو الصفحة اتقفلت بتكمل من مكانك.</li>
     </ol>
   </div>
+  <p style="text-align:center"><a href="#/about" class="muted">عن المنصة</a></p>
   `);
   on('#go','click', async () => {
     const code = val('#code').trim().toUpperCase().replace(/\s/g,'');
@@ -520,7 +528,7 @@ const NAV_GROUPS = [
   ['الطلبة والدرجات', [['#/teacher/students','الطلبة','🎓'],['#/teacher/tracking','متابعة الطلبة','👀'],['#/teacher/results','النتايج','📋'],['#/teacher/analytics','التحليلات','📈']]],
   ['الفيديوهات', [['#/teacher/videos','فيديوهات الشرح','🎬']]],
   ['التقارير', [['#/teacher/reports','تقارير أولياء الأمور','💬']]],
-  ['الحساب', [['#/teacher/settings','الإعدادات','⚙️']]]
+  ['الحساب', [['#/teacher/settings','الإعدادات','⚙️'],['#/about','عن المنصة','ℹ️']]]
 ];
 let profileCache = null;
 
@@ -1427,6 +1435,55 @@ async function tVideos(){
   });
 }
 
+// ============ ABOUT ============
+function aboutPage(){
+  document.body.classList.add('student-view');
+  const canInstall = !!window.__deferredInstall;
+  render(`
+  <header class="student-hero">
+    <span class="study-art" aria-hidden="true">✦ ▤ ◇</span>
+    <h1 class="h1">عن المنصة</h1>
+    <p>منصة امتحانات إلكترونية للمدرسين والطلبة، من رابعة ابتدائي لحد تالتة إعدادي.</p>
+  </header>
+  <div class="card">
+    <div class="h2" style="margin-top:0">إحنا مين؟</div>
+    <p class="muted">المنصة بتخلّي المدرس يعمل امتحانه في دقايق، والطالب يحلّه من موبايله بسهولة، والنتيجة تظهر فورًا من غير تصحيح بإيد. الهدف إن الوقت اللي بيضيع في الورق والتصحيح يتحوّل لشرح ومتابعة حقيقية للطلبة.</p>
+  </div>
+  <div class="card">
+    <div class="h2" style="margin-top:0">للطلبة</div>
+    <ul class="muted">
+      <li>بتدخل الامتحان بكود خاص بيك من مدرسك، بيشتغل مرة واحدة.</li>
+      <li>الامتحان بتايمر، وبيتسلّم لوحده لما الوقت يخلص.</li>
+      <li>إجاباتك بتتحفظ أول بأول، لو الصفحة اتقفلت بتكمل من مكانك.</li>
+      <li>تشوف نتيجتك بعد التسليم لو المدرس سمح بكده.</li>
+      <li>فيديوهات الشرح متاحة للمشتركين بيوزر وباسورد من مدرسك.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="h2" style="margin-top:0">للمدرسين</div>
+    <ul class="muted">
+      <li>إنشاء امتحانات اختيار من متعدد وصح وخطأ وإجابة قصيرة ومقالي.</li>
+      <li>إضافة الأسئلة بتصوير الورق، أو برفع ملف JSON، أو كتابتها بإيدك.</li>
+      <li>أكواد خاصة لكل طالب، وتصحيح تلقائي مع تصحيح يدوي للمقالي.</li>
+      <li>متابعة الطلبة لحظة بلحظة، وتحليلات للنتايج.</li>
+      <li>تقارير جاهزة لأولياء الأمور تبعتها بضغطة واحدة.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="h2" style="margin-top:0">ثبّت المنصة على موبايلك</div>
+    <p class="muted">من غير تحميل ملفات ومن غير تحديثات يدوية: أي تحديث بيوصلك لوحده أول ما تفتح.</p>
+    ${canInstall ? '<div class="actions"><button class="btn btn-p" id="inst">تثبيت التطبيق</button></div>' : '<p class="muted">افتح الموقع من متصفح كروم، اضغط على النقط التلاتة فوق، وبعدين اختار «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</p>'}
+  </div>
+  <div class="card">
+    <div class="h2" style="margin-top:0">خصوصيتك</div>
+    <p class="muted">بيانات الطلبة ونتايجهم بتظهر للمدرس اللي عمل الامتحان بس.</p>
+  </div>
+  <div class="actions"><a class="btn btn-s" href="#/" id="about-back">رجوع</a></div>
+  `);
+  on('#inst','click', async () => { const d = window.__deferredInstall; if (!d) return; d.prompt(); try { await d.userChoice; } catch(_e){} window.__deferredInstall = null; });
+  on('#about-back','click', e => { e.preventDefault(); if (history.length > 1) history.back(); else location.hash = '#/'; });
+}
+
 // ============ ROUTER ============
 async function route(){
   const h = location.hash || '#/';
@@ -1436,6 +1493,7 @@ async function route(){
   document.body.classList.toggle('student-view',!h.startsWith('#/teacher'));
   clearInterval(studentState?.timerIv);
   if (h === '#/' || h === '#') return studentLanding();
+  if (h === '#/about') return aboutPage();
   if (h === '#/videos') return studentVideos();
   if (h === '#/exam') return studentState ? studentInfo() : studentLanding();
   if (h === '#/exam/q') return studentState ? studentExam() : studentLanding();
@@ -1466,9 +1524,17 @@ if (SUPABASE_URL.startsWith('__')){
 </script>
 <script>
 if('serviceWorker' in navigator){
-window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});
-var swRefreshing=false;
-navigator.serviceWorker.addEventListener('controllerchange',function(){if(swRefreshing)return;swRefreshing=true;location.reload();});
+  var swPending=false,swReg=null;
+  function swBusy(){var h=location.hash||'';return h.indexOf('#/exam/q')===0||h.indexOf('#/teacher/new')===0||h.indexOf('#/teacher/edit')===0;}
+  function swApply(){if(swPending&&!swBusy()){swPending=false;location.reload();}}
+  window.addEventListener('hashchange',function(){setTimeout(swApply,300);});
+  var hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){if(!hadController){hadController=true;return;}swPending=true;swApply();});
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').then(function(r){swReg=r;r.update().catch(function(){});}).catch(function(){});
+  });
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&swReg)swReg.update().catch(function(){});});
+  setInterval(function(){if(swReg)swReg.update().catch(function(){});},1800000);
 }
 </script>
 </body>
