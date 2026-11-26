@@ -1,0 +1,2556 @@
+
+===== FILE: lib/main_teacher.dart =====
+import 'package:flutter/material.dart';
+import 'src/core.dart';
+import 'teacher/auth.dart';
+import 'teacher/home.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initSupabase();
+  runApp(const TeacherApp());
+}
+
+class TeacherApp extends StatefulWidget {
+  const TeacherApp({super.key});
+  @override
+  State<TeacherApp> createState() => _TeacherAppState();
+}
+
+class _TeacherAppState extends State<TeacherApp> {
+  bool _loggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loggedIn = sb.auth.currentUser != null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate('teacher'));
+    sb.auth.onAuthStateChange.listen((e) {
+      final logged = e.session != null;
+      if (mounted && logged != _loggedIn) setState(() => _loggedIn = logged);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'المنصة',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: navKey,
+      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox()),
+      theme: buildTheme(teacher: true),
+      home: _loggedIn ? const TeacherHome() : TeacherLoginPage(onLoggedIn: () => setState(() => _loggedIn = true)),
+    );
+  }
+}
+
+===== FILE: lib/teacher/analytics.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class AnalyticsPage extends StatefulWidget {
+  const AnalyticsPage({super.key});
+  @override
+  State<AnalyticsPage> createState() => _AnalyticsPageState();
+}
+
+class _AnalyticsPageState extends State<AnalyticsPage> {
+  List _exams = [];
+  List _subs = [];
+  List _questions = [];
+  Map<String, num> _gsum = {};
+  Map? _exam;
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final exams = await sb.from('exams').select('id,title,pass_pct').order('created_at', ascending: false);
+      final subs = await sb.from('submissions')
+          .select('*, exam_sessions(code_id, codes(student_name, exam_id))')
+          .order('submitted_at', ascending: false);
+      final grades = await sb.from('essay_grades').select('*');
+      final gsum = <String, num>{};
+      for (final g in grades) { gsum[g['submission_id']] = (gsum[g['submission_id']] ?? 0) + (g['awarded'] as num); }
+      if (!mounted) return;
+      _exams = exams; _subs = subs; _gsum = gsum;
+      final withRes = exams.where((e) => subs.any((s) => s['exam_sessions']?['codes']?['exam_id'] == e['id'])).toList();
+      if (withRes.isEmpty) { setState(() { _exam = null; _loading = false; }); return; }
+      final exam = withRes.firstWhere((e) => _exam != null && e['id'] == _exam!['id'], orElse: () => withRes.first);
+      final qs = await sb.from('questions').select('id,text,type,points').eq('exam_id', exam['id']).order('ord');
+      if (mounted) setState(() { _exam = exam; _questions = qs; _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('التحليلات')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _exam == null
+                ? Center(child: Text('مفيش بيانات لسه، أول ما تيجي نتايج هتظهر هنا.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600)))
+                : _body(),
+      ),
+    );
+  }
+
+  Widget _body() {
+    final examId = _exam!['id'];
+    final rows = _subs.where((s) => s['exam_sessions']?['codes']?['exam_id'] == examId).toList();
+    final essayMax = _questions.where((q) => q['type'] == 'essay').fold<num>(0, (a, q) => a + (q['points'] as num));
+    num finalPct(Map s) {
+      final t = (s['auto_total'] as num) + essayMax;
+      return t == 0 ? 0 : (((s['auto_score'] as num) + (_gsum[s['id']] ?? 0)) * 1000 / t).round() / 10;
+    }
+    final pcts = rows.map((s) => finalPct(s as Map)).toList();
+    final avg = pcts.isEmpty ? 0 : (pcts.fold<num>(0, (a, b) => a + b) / pcts.length).round();
+    final passRate = pcts.isEmpty ? 0 : (pcts.where((p) => p >= (_exam!['pass_pct'] as num)).length * 100 / pcts.length).round();
+    final auto = _questions.where((q) => q['type'] != 'essay').toList();
+    final qStats = auto.asMap().entries.map((e) {
+      final i = e.key;
+      final att = rows.where((r) => (r['bitmap'] ?? '').length > i).toList();
+      final ok = att.where((r) => r['bitmap'][i] == '1').length;
+      return {'q': e.value, 'pct': att.isEmpty ? 0 : (ok * 100 / att.length).round(), 'n': att.length};
+    }).toList();
+    final ranked = rows.toList()..sort((a, b) => finalPct(b).compareTo(finalPct(a)));
+    final missed = qStats.toList()..sort((a, b) => (a['pct'] as int).compareTo(b['pct'] as int));
+    final withRes = _exams.where((e) => _subs.any((s) => s['exam_sessions']?['codes']?['exam_id'] == e['id'])).toList();
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      if (withRes.length > 1)
+        DropdownButtonFormField<String>(
+          value: _exam!['id'] as String,
+          decoration: const InputDecoration(labelText: 'الامتحان'),
+          items: withRes.map<DropdownMenuItem<String>>((e) => DropdownMenuItem(value: e['id'] as String, child: Text(e['title'] ?? ''))).toList(),
+          onChanged: (v) { setState(() => _exam = _exams.firstWhere((e) => e['id'] == v)); _load(); },
+        ),
+      const SizedBox(height: 8),
+      Row(children: [_stat('تسليم', '${rows.length}'), _stat('المتوسط', '$avg%'), _stat('أعلى', '${pcts.isEmpty ? 0 : pcts.reduce((a, b) => a > b ? a : b)}%')]),
+      Row(children: [_stat('أقل', '${pcts.isEmpty ? 0 : pcts.reduce((a, b) => a < b ? a : b)}%'), _stat('نسبة النجاح', '$passRate%'), _stat('أسئلة', '${_questions.length}')]),
+      const SizedBox(height: 8),
+      Card(child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('ترتيب الطلبة', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 8),
+          ...ranked.asMap().entries.map((e) {
+            final s = e.value;
+            final p = finalPct(s);
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(children: [
+                SizedBox(width: 26, child: Text('${e.key + 1}.', style: TextStyle(color: Colors.grey.shade500))),
+                Expanded(child: Text(s['exam_sessions']?['codes']?['student_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w700))),
+                Text('$p%', style: const TextStyle(fontWeight: FontWeight.w900)),
+              ]),
+            );
+          }),
+        ]),
+      )),
+      Card(child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('صعوبة الأسئلة (نسبة الصح)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 10),
+          ...qStats.asMap().entries.map((e) {
+            final st = e.value;
+            final qt = (st['q']['text'] ?? '').toString();
+            final pctv = st['pct'] as int;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('س${e.key + 1}: ${qt.length > 50 ? '${qt.substring(0, 49)}…' : qt}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Expanded(child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(value: pctv / 100, minHeight: 8, backgroundColor: Colors.grey.shade200, color: pctv >= 60 ? kTeal : (pctv >= 40 ? kGold : Colors.red)),
+                  )),
+                  const SizedBox(width: 8),
+                  Text('$pctv% • ${st['n']}', style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
+                ]),
+              ]),
+            );
+          }),
+        ]),
+      )),
+      Card(child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('أكتر أسئلة الطلبة غلطوا فيها', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 8),
+          if (missed.isEmpty) Text('مفيش بيانات كفاية.', style: TextStyle(color: Colors.grey.shade600)),
+          ...missed.take(3).map((m) {
+            final qt = (m['q']['text'] ?? '').toString();
+            return ListTile(
+              dense: true, contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.error_outline, color: Colors.red.shade300),
+              title: Text(qt.length > 70 ? '${qt.substring(0, 69)}…' : qt, style: const TextStyle(fontSize: 13)),
+              trailing: Text('${m['pct']}% صح', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+            );
+          }),
+        ]),
+      )),
+    ]);
+  }
+
+  Widget _stat(String label, String v) => Expanded(
+        child: Card(
+          margin: const EdgeInsets.all(3),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Column(children: [
+              Text(v, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: kNavy)),
+              Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            ]),
+          ),
+        ),
+      );
+}
+
+===== FILE: lib/teacher/auth.dart =====
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../src/core.dart';
+
+class TeacherLoginPage extends StatefulWidget {
+  final VoidCallback onLoggedIn;
+  const TeacherLoginPage({super.key, required this.onLoggedIn});
+  @override
+  State<TeacherLoginPage> createState() => _TeacherLoginPageState();
+}
+
+class _TeacherLoginPageState extends State<TeacherLoginPage> {
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
+  bool _busy = false;
+  bool _signupMode = false;
+
+  Future<void> _submit() async {
+    final email = _email.text.trim(), pass = _pass.text;
+    if (email.isEmpty || pass.isEmpty) { toast(context, 'اكتب الإيميل وكلمة السر', err: true); return; }
+    setState(() => _busy = true);
+    try {
+      if (_signupMode) {
+        await sb.auth.signUp(email: email, password: pass);
+        if (mounted) toast(context, 'الحساب اتعمل. سجّل دخول دلوقتي بنفس الإيميل وكلمة السر.');
+        setState(() => _signupMode = false);
+      } else {
+        await sb.auth.signInWithPassword(email: email, password: pass);
+        widget.onLoggedIn();
+      }
+    } on AuthException catch (e) {
+      if (mounted) toast(context, (e.statusCode == '429' || e.message.toLowerCase().contains('rate limit')) ? 'محاولات كتير. استنى شوية وجرّب تاني.' : (_signupMode ? 'مشكلة في إنشاء الحساب: ${e.message}' : 'الإيميل أو كلمة السر مش مظبوطين'), err: true);
+    } catch (_) {
+      if (mounted) toast(context, 'حصلت مشكلة، جرب تاني', err: true);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _forgot() async {
+    final email = _email.text.trim();
+    if (email.isEmpty) { toast(context, 'اكتب إيميلك الأول وبعدين دوس نسيت كلمة السر', err: true); return; }
+    setState(() => _busy = true);
+    try {
+      await sb.auth.resetPasswordForEmail(email);
+      if (mounted) toast(context, 'بعنالك لينك إعادة تعيين كلمة السر على إيميلك');
+    } catch (_) {
+      if (mounted) toast(context, 'حصلت مشكلة، جرب تاني', err: true);
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: SingleChildScrollView(
+          child: Column(children: [
+            FadeSlideIn(child: const BrandHeader(subtitle: 'امتحانات وفيديوهات شرح طلبتك في مكان واحد')),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: FadeSlideIn(
+                delayMs: 200,
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Text(_signupMode ? 'حساب مدرس جديد' : 'دخول المدرس',
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+                      const SizedBox(height: 6),
+                      Text('كل مدرس ليه حسابه الخاص: امتحاناته وطلبته ودرجاتهم منفصلة تمامًا.',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13), textAlign: TextAlign.center),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.left,
+                        decoration: const InputDecoration(labelText: 'البريد الإلكتروني', prefixIcon: Icon(Icons.mail_outline)),
+                      ),
+                      const SizedBox(height: 12),
+                      PwField(controller: _pass, action: TextInputAction.done, onSubmit: (_) => _submit()),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton(onPressed: _busy ? null : _forgot, child: const Text('نسيت كلمة السر؟')),
+                      ),
+                      BusyBtn(label: _signupMode ? 'إنشاء الحساب' : 'دخول', busy: _busy, onTap: _submit, icon: Icons.login),
+                      TextButton(
+                        onPressed: _busy ? null : () => setState(() => _signupMode = !_signupMode),
+                        child: Text(_signupMode ? 'عندك حساب؟ سجّل دخول' : 'أول مرة؟ اعمل حساب جديد'),
+                      ),
+                      Text('حساب جديد بيدخل على طول من غير تأكيد إيميل.',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 12), textAlign: TextAlign.center),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/codes.dart =====
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../src/core.dart';
+
+class CodesPage extends StatefulWidget {
+  const CodesPage({super.key});
+  @override
+  State<CodesPage> createState() => _CodesPageState();
+}
+
+class _CodesPageState extends State<CodesPage> {
+  List _exams = [];
+  Map? _exam;
+  List _codes = [];
+  List _students = [];
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() { super.initState(); _loadExams(); }
+
+  Future<void> _loadExams() async {
+    setState(() => _loading = true);
+    try {
+      final e = await sb.from('exams').select('id,title,published,open_enabled,open_token').order('created_at', ascending: false);
+      final st = await sb.from('students').select('*').order('name');
+      if (!mounted) return;
+      setState(() { _exams = e; _students = st; _exam = e.isEmpty ? null : e.first; });
+      await _loadCodes();
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  Future<void> _loadCodes() async {
+    if (_exam == null) { if (mounted) setState(() => _loading = false); return; }
+    try {
+      final c = await sb.rpc('exam_code_status', params: {'p_exam': _exam!['id']});
+      if (mounted) setState(() { _codes = c; _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  String _chipFor(String? s) => s == 'completed' ? 'مكتمل' : s == 'in_progress' ? 'قيد الحل دلوقتي' : 'غير مستخدم';
+  Color _chipColor(String? s) => s == 'completed' ? kTeal : s == 'in_progress' ? kGold : Colors.grey;
+
+  String _invite(Map c) =>
+      'أهلًا ${c['student_name']}، ده الكود بتاعك لامتحان "${_exam!['title']}". افتح اللينك ده واكتب الكود عشان تبدأ: $kSiteUrl\n\nالكود: ${c['token']}';
+
+  Future<void> _publish() async {
+    setState(() => _busy = true);
+    try {
+      await sb.from('exams').update({'published': true}).eq('id', _exam!['id']);
+      await _loadExams();
+      if (mounted) { setState(() { _exam = _exams.firstWhere((e) => e['id'] == _exam!['id'], orElse: () => _exam!); }); toast(context, 'الامتحان اتنشر'); }
+    } catch (_) { if (mounted) toast(context, 'النشر متمش، جرب تاني', err: true); }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _genFromNames() async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('أسماء الطلبة'),
+          content: TextField(controller: ctrl, maxLines: 6, decoration: const InputDecoration(hintText: 'كل اسم في سطر', border: OutlineInputBorder())),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('اعمل الأكواد')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final names = ctrl.text.split('\n').map((s) => s.trim()).where((s) => s.isNotEmpty && !_codes.any((c) => c['student_name'] == s)).toList();
+    await _gen(names);
+  }
+
+  Future<void> _genForRegistered() async {
+    final names = _students.map((s) => s['name'].toString()).where((n) => !_codes.any((c) => c['student_name'] == n)).toList();
+    await _gen(names);
+  }
+
+  Future<void> _gen(List<String> names) async {
+    if (names.isEmpty) { toast(context, 'مفيش أسماء جديدة تتعملها أكواد', err: true); return; }
+    setState(() => _busy = true);
+    try {
+      final rows = names.map((n) => {
+            'exam_id': _exam!['id'], 'student_name': n, 'token': newToken(),
+            'student_id': _students.firstWhere((s) => s['name'] == n, orElse: () => {'id': null})['id'],
+          }).toList();
+      await sb.from('codes').insert(rows);
+      await _loadCodes();
+      if (mounted) toast(context, 'اتعمل ${names.length} كود');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _openLink(String action) async {
+    try {
+      if (action == 'enable') {
+        await sb.from('exams').update({'open_enabled': true, 'open_token': _exam!['open_token'] ?? newToken()}).eq('id', _exam!['id']);
+      } else if (action == 'disable') {
+        await sb.from('exams').update({'open_enabled': false}).eq('id', _exam!['id']);
+      } else {
+        await sb.from('exams').update({'open_token': newToken()}).eq('id', _exam!['id']);
+      }
+      await _loadExams();
+      if (mounted) setState(() { _exam = _exams.firstWhere((e) => e['id'] == _exam!['id'], orElse: () => _exam!); });
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final openEnabled = _exam?['open_enabled'] == true;
+    final openLink = '$kSiteUrl?open=${_exam?['open_token'] ?? ''}';
+    final waText = 'لينك امتحان "${_exam?['title'] ?? ''}": افتح اللينك، اكتب اسمك، وابدأ على طول: $openLink';
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('أكواد الطلبة')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _exam == null
+                ? Center(child: Text('اعمل امتحان الأول من صفحة الامتحانات.', style: TextStyle(color: Colors.grey.shade600)))
+                : RefreshIndicator(
+                    onRefresh: _loadExams,
+                    child: ListView(padding: const EdgeInsets.all(16), children: [
+                      DropdownButtonFormField<String>(
+                        value: _exam!['id'] as String,
+                        decoration: const InputDecoration(labelText: 'الامتحان'),
+                        items: _exams.map<DropdownMenuItem<String>>((e) => DropdownMenuItem(value: e['id'] as String, child: Text(e['title'] ?? ''))).toList(),
+                        onChanged: (v) { setState(() { _exam = _exams.firstWhere((e) => e['id'] == v); _loading = true; }); _loadCodes(); },
+                      ),
+                      const SizedBox(height: 12),
+                      if (_exam!['published'] != true) ...[
+                        Card(child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            const Text('الامتحان ده محفوظ كمسودة. انشره الأول عشان تقدر تعمل أكواد.'),
+                            const SizedBox(height: 10),
+                            BusyBtn(label: '١. انشر الامتحان', busy: _busy, onTap: _publish, icon: Icons.publish),
+                          ]),
+                        )),
+                      ] else ...[
+                        Card(child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            const Text('١. اعمل الأكواد', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                            const SizedBox(height: 4),
+                            Text('كل طالب ليه كود مختلف. ابعت لكل طالب دعوته بس.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(onPressed: _busy ? null : _genFromNames, icon: const Icon(Icons.playlist_add), label: const Text('اكتب أسماء وولّد')),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(onPressed: _busy ? null : _genForRegistered, icon: const Icon(Icons.groups_outlined), label: const Text('ولّد للطلبة المسجلين')),
+                          ]),
+                        )),
+                        Card(child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            const Text('٢. أو شارك لينك مفتوح (من غير كود)', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                            const SizedBox(height: 8),
+                            if (openEnabled) ...[
+                              SelectableText(openLink, textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12.5)),
+                              const SizedBox(height: 10),
+                              Row(children: [
+                                Expanded(child: OutlinedButton.icon(
+                                  onPressed: () { Clipboard.setData(ClipboardData(text: openLink)); toast(context, 'اللينك اتنسخ'); },
+                                  icon: const Icon(Icons.copy, size: 18), label: const Text('نسخ'))),
+                                const SizedBox(width: 8),
+                                Expanded(child: ElevatedButton.icon(
+                                  onPressed: () => launchUrl(waLink('', waText), mode: LaunchMode.externalApplication),
+                                  icon: const Icon(Icons.send, size: 18), label: const Text('واتساب'))),
+                              ]),
+                              const SizedBox(height: 8),
+                              Row(children: [
+                                Expanded(child: TextButton(onPressed: () => _openLink('regen'), child: const Text('لينك جديد'))),
+                                Expanded(child: TextButton(onPressed: () => _openLink('disable'), child: const Text('إيقاف اللينك', style: TextStyle(color: Colors.red)))),
+                              ]),
+                            ] else
+                              ElevatedButton.icon(onPressed: () => _openLink('enable'), icon: const Icon(Icons.link), label: const Text('تفعيل اللينك المفتوح')),
+                            const SizedBox(height: 4),
+                            Text('أي حد معاه اللينك يقدر يحل، وممكن يحل أكتر من مرة.', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                          ]),
+                        )),
+                      ],
+                      if (_codes.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        const Text('٣. ابعت الدعوة لكل طالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        const SizedBox(height: 6),
+                        ..._codes.map((c) => Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                                  Row(children: [
+                                    Expanded(child: Text(c['student_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700))),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(color: _chipColor(c['status']).withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                                      child: Text(_chipFor(c['status']), style: TextStyle(fontSize: 12, color: _chipColor(c['status']), fontWeight: FontWeight.w700)),
+                                    ),
+                                  ]),
+                                  Text('كود: ${c['token']}', textDirection: TextDirection.ltr, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  Row(children: [
+                                    Expanded(child: OutlinedButton.icon(
+                                      onPressed: () { Clipboard.setData(ClipboardData(text: _invite(c))); toast(context, 'الدعوة اتنسخت'); },
+                                      icon: const Icon(Icons.copy, size: 17), label: const Text('نسخ الدعوة', style: TextStyle(fontSize: 13)))),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(42)),
+                                      onPressed: () => launchUrl(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(_invite(c))}'), mode: LaunchMode.externalApplication),
+                                      icon: const Icon(Icons.send, size: 17), label: const Text('إرسال واتساب', style: TextStyle(fontSize: 13)))),
+                                  ]),
+                                ]),
+                              ),
+                            )),
+                      ] else if (_exam!['published'] == true)
+                        Padding(padding: const EdgeInsets.all(16), child: Text('مفيش أكواد لسه للامتحان ده.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600))),
+                    ]),
+                  ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/exams.dart =====
+import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import '../src/core.dart';
+
+class ExamsTab extends StatefulWidget {
+  const ExamsTab({super.key});
+  @override
+  State<ExamsTab> createState() => _ExamsTabState();
+}
+
+class _ExamsTabState extends State<ExamsTab> {
+  List _exams = [];
+  bool _loading = true;
+  String _stageFilter = '';
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final uid = sb.auth.currentUser!.id;
+      final rows = await sb.from('exams').select().eq('teacher_id', uid).order('created_at', ascending: false);
+      if (mounted) setState(() { _exams = rows; _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  Future<void> _create() async {
+    final made = await Navigator.push(context, MaterialPageRoute(builder: (_) => const ExamFormPage()));
+    if (made != null && mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ExamDetailPage(exam: made))).then((_) => _load());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الامتحانات')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _create, backgroundColor: kNavy, foregroundColor: Colors.white,
+        icon: const Icon(Icons.add), label: const Text('امتحان جديد'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _exams.isEmpty
+                ? ListView(children: [
+                    const SizedBox(height: 120),
+                    Icon(Icons.assignment_outlined, size: 64, color: Colors.grey.shade400),
+                    const SizedBox(height: 12),
+                    Text('مفيش امتحانات لسه\nدوس "امتحان جديد" وابدأ', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
+                  ])
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _exams.where((e) => _stageFilter.isEmpty || (e['grade'] ?? '') == _stageFilter).length + 1,
+                    itemBuilder: (_, i) {
+                      if (i == 0) {
+                        return SizedBox(
+                          height: 46,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            children: [
+                              Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: const Text('كل المراحل'), selected: _stageFilter.isEmpty, onSelected: (_) => setState(() => _stageFilter = ''))),
+                              ...kStages.map((st) => Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: Text(st), selected: _stageFilter == st, onSelected: (_) => setState(() => _stageFilter = st)))),
+                            ],
+                          ),
+                        );
+                      }
+                      final e = _exams.where((e) => _stageFilter.isEmpty || (e['grade'] ?? '') == _stageFilter).toList()[i - 1];
+                      return Card(
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: CircleAvatar(
+                            backgroundColor: (e['published'] == true ? kTeal : Colors.grey).withOpacity(0.15),
+                            child: Icon(Icons.assignment, color: e['published'] == true ? kTeal : Colors.grey),
+                          ),
+                          title: Text(e['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          subtitle: Text('${e['subject'] ?? ''} ${e['grade'] ?? ''} • ${e['duration_min']} دقيقة • ${e['published'] == true ? 'منشور' : 'مسودة'}'),
+                          trailing: const Icon(Icons.chevron_left),
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExamDetailPage(exam: e))).then((_) => _load()),
+                        ),
+                      );
+                    },
+                  ),
+      ),
+    );
+  }
+}
+
+// ---------- Exam create/edit form ----------
+class ExamFormPage extends StatefulWidget {
+  final Map? exam;
+  const ExamFormPage({super.key, this.exam});
+  @override
+  State<ExamFormPage> createState() => _ExamFormPageState();
+}
+
+class _ExamFormPageState extends State<ExamFormPage> {
+  final _title = TextEditingController();
+  final _subject = TextEditingController();
+  final _grade = TextEditingController();
+  final _desc = TextEditingController();
+  final _duration = TextEditingController(text: '15');
+  final _pass = TextEditingController(text: '50');
+  bool _shuffleQ = true, _shuffleC = true, _showResult = true, _published = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.exam;
+    if (e != null) {
+      _title.text = e['title'] ?? ''; _subject.text = e['subject'] ?? ''; _grade.text = e['grade'] ?? '';
+      _desc.text = e['description'] ?? ''; _duration.text = '${e['duration_min'] ?? 15}'; _pass.text = '${e['pass_pct'] ?? 50}';
+      _shuffleQ = e['shuffle_q'] ?? true; _shuffleC = e['shuffle_c'] ?? true;
+      _showResult = e['show_result'] ?? true; _published = e['published'] ?? false;
+    }
+  }
+
+  Future<void> _save() async {
+    if (_title.text.trim().isEmpty) { toast(context, 'اكتب عنوان الامتحان', err: true); return; }
+    setState(() => _busy = true);
+    final row = {
+      'title': _title.text.trim(), 'subject': _subject.text.trim(), 'grade': _grade.text.trim(),
+      'description': _desc.text.trim(),
+      'duration_min': int.tryParse(_duration.text) ?? 15,
+      'pass_pct': int.tryParse(_pass.text) ?? 50,
+      'shuffle_q': _shuffleQ, 'shuffle_c': _shuffleC, 'show_result': _showResult, 'published': _published,
+    };
+    try {
+      Map saved;
+      if (widget.exam == null) {
+        row['teacher_id'] = sb.auth.currentUser!.id;
+        saved = await sb.from('exams').insert(row).select().single();
+      } else {
+        saved = await sb.from('exams').update(row).eq('id', widget.exam!['id']).select().single();
+      }
+      if (mounted) Navigator.pop(context, saved);
+    } catch (_) {
+      if (mounted) { toast(context, 'حصلت مشكلة في الحفظ', err: true); setState(() => _busy = false); }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: Text(widget.exam == null ? 'امتحان جديد' : 'تعديل الامتحان')),
+        body: ListView(padding: const EdgeInsets.all(16), children: [
+          TextField(controller: _title, decoration: const InputDecoration(labelText: 'عنوان الامتحان *')),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: _subject, decoration: const InputDecoration(labelText: 'المادة'))),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                value: kStages.contains(_grade.text) ? _grade.text : null,
+                decoration: const InputDecoration(labelText: 'المرحلة / الصف'),
+                items: kStages.map((st) => DropdownMenuItem(value: st, child: Text(st, style: const TextStyle(fontSize: 13)))).toList(),
+                onChanged: (v) => setState(() => _grade.text = v ?? ''),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          TextField(controller: _desc, maxLines: 2, decoration: const InputDecoration(labelText: 'وصف (اختياري)')),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: TextField(controller: _duration, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'المدة (دقيقة)'))),
+            const SizedBox(width: 12),
+            Expanded(child: TextField(controller: _pass, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'نسبة النجاح %'))),
+          ]),
+          const SizedBox(height: 8),
+          SwitchListTile(value: _shuffleQ, onChanged: (v) => setState(() => _shuffleQ = v), title: const Text('خلط ترتيب الأسئلة'), dense: true),
+          SwitchListTile(value: _shuffleC, onChanged: (v) => setState(() => _shuffleC = v), title: const Text('خلط ترتيب الاختيارات'), dense: true),
+          SwitchListTile(value: _showResult, onChanged: (v) => setState(() => _showResult = v), title: const Text('إظهار النتيجة للطالب بعد التسليم'), dense: true),
+          SwitchListTile(value: _published, onChanged: (v) => setState(() => _published = v), title: const Text('منشور (الطلبة يقدروا يدخلوا)'), dense: true),
+          const SizedBox(height: 16),
+          BusyBtn(label: widget.exam == null ? 'إنشاء الامتحان' : 'حفظ التعديلات', busy: _busy, onTap: _save, icon: Icons.check),
+        ]),
+      ),
+    );
+  }
+}
+
+// ---------- Exam detail ----------
+class ExamDetailPage extends StatefulWidget {
+  final Map exam;
+  const ExamDetailPage({super.key, required this.exam});
+  @override
+  State<ExamDetailPage> createState() => _ExamDetailPageState();
+}
+
+class _ExamDetailPageState extends State<ExamDetailPage> {
+  late Map _exam;
+  List _questions = [];
+  List _codes = [];
+  List _subs = [];
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _exam = widget.exam; _load(); }
+
+  Future<void> _load() async {
+    try {
+      final id = _exam['id'];
+      final qs = await sb.from('questions').select().eq('exam_id', id).order('ord');
+      final cs = await sb.rpc('exam_code_status', params: {'p_exam': id});
+      final subs = await sb.from('submissions')
+          .select('*, exam_sessions!inner(codes!inner(student_name, exam_id, token))')
+          .eq('exam_sessions.codes.exam_id', id);
+      final fresh = await sb.from('exams').select().eq('id', id).single();
+      if (mounted) setState(() { _exam = fresh; _questions = qs; _codes = cs; _subs = subs; _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: DefaultTabController(
+        length: 3,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(_exam['title'] ?? ''),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExamFormPage(exam: _exam))).then((v) { if (v != null) _load(); }),
+              ),
+            ],
+            bottom: const TabBar(
+              labelColor: Colors.white, unselectedLabelColor: Colors.white60, indicatorColor: kTeal,
+              tabs: [Tab(text: 'الأسئلة'), Tab(text: 'الأكواد'), Tab(text: 'النتائج')],
+            ),
+          ),
+          body: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(children: [_questionsTab(), _codesTab(), _resultsTab()]),
+        ),
+      ),
+    );
+  }
+
+  Widget _questionsTab() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _editQuestion(null), backgroundColor: kNavy, foregroundColor: Colors.white, child: const Icon(Icons.add),
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _importing ? null : _importFromPhotos,
+              icon: const Icon(Icons.photo_camera_outlined),
+              label: Text(_importing ? 'بقرا الصور... ممكن ياخد دقيقة' : 'إضافة أسئلة من صور'),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _importing ? null : _importFromJson,
+              icon: const Icon(Icons.upload_file),
+              label: const Text('استيراد أسئلة من ملف JSON'),
+            ),
+          ),
+        ),
+        if (_importing) const LinearProgressIndicator(),
+        Expanded(child: _questions.isEmpty
+          ? Center(child: Text('مفيش أسئلة لسه. دوس + وضيف أول سؤال، أو صوّر ورقة الامتحان.', style: TextStyle(color: Colors.grey.shade600)))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _questions.length,
+              itemBuilder: (_, i) {
+                final q = _questions[i];
+                final typeName = {'mcq': 'اختياري', 'tf': 'صح وغلط', 'sa': 'إجابة قصيرة', 'essay': 'مقالي'}[q['type']] ?? q['type'];
+                return Card(
+                  child: ListTile(
+                    leading: CircleAvatar(radius: 14, child: Text('${i + 1}', style: const TextStyle(fontSize: 13))),
+                    title: Text(q['text'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text('$typeName • ${q['points']} درجة'),
+                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _editQuestion(q)),
+                      IconButton(icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red), onPressed: () => _delQuestion(q)),
+                    ]),
+                  ),
+                );
+              },
+            ),
+        ),
+      ]),
+    );
+  }
+
+  bool _importing = false;
+
+  Future<void> _importFromJson() async {
+    final picked = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+    if (picked == null || picked.files.isEmpty) return;
+    final f = picked.files.first;
+    setState(() => _importing = true);
+    try {
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) bytes = await File(f.path!).readAsBytes();
+      if (bytes == null) throw 'مقدرتش أقرا الملف.';
+      if (bytes.length > 500000) throw 'الملف كبير جدًا. الحد الأقصى ٥٠٠ كيلوبايت.';
+      dynamic data;
+      try { data = jsonDecode(utf8.decode(bytes)); } catch (_) { throw 'الملف مش JSON صالح. اختار ملف الامتحان الأصلي.'; }
+      final rows = data is List ? data : (data is Map ? data['questions'] : null);
+      if (rows is! List || rows.isEmpty || rows.length > 100) throw 'لازم الملف يحتوي من ١ إلى ١٠٠ سؤال.';
+      final out = <Map<String, dynamic>>[];
+      for (var i = 0; i < rows.length; i++) {
+        final q = rows[i];
+        if (q is! Map || q['text'] is! String || (q['text'] as String).trim().isEmpty) throw 'نص السؤال ${i + 1} ناقص.';
+        if (q['type'] != null && q['type'] != 'mcq') throw 'الاستيراد بيدعم الاختيار من متعدد بس.';
+        final ch = q['choices'];
+        if (ch is! List || ch.length < 2 || ch.length > 6 || ch.any((c) => c is! String || c.trim().isEmpty)) throw 'راجع اختيارات السؤال ${i + 1}.';
+        final c = q['correct'];
+        if (c is! int || c < 0 || c >= ch.length) throw 'الإجابة الصحيحة للسؤال ${i + 1} مش محددة صح.';
+        final pts = q['points'] ?? 1;
+        if (pts is! num || pts < 0.5 || pts > 100) throw 'درجة السؤال ${i + 1} غير مدعومة.';
+        out.add({'text': (q['text'] as String).trim(), 'choices': ch.map((e) => (e as String).trim()).toList(), 'correct': c, 'points': pts});
+      }
+      var ord = _questions.length;
+      for (final q in out) {
+        await sb.from('questions').insert({
+          'exam_id': _exam['id'], 'ord': ord, 'text': q['text'], 'type': 'mcq',
+          'points': q['points'], 'choices': q['choices'], 'correct': q['correct'], 'accepted': null,
+        });
+        ord++;
+      }
+      if (mounted) toast(context, 'اتضاف ${out.length} سؤال من الملف. راجعهم.');
+      _load();
+    } catch (e) {
+      if (mounted) toast(context, e is String ? e : 'حصلت مشكلة في الاستيراد: $e', err: true);
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _importFromPhotos() async {
+    final files = await ImagePicker().pickMultiImage(maxWidth: 1600, imageQuality: 70);
+    if (files.isEmpty) return;
+    setState(() => _importing = true);
+    try {
+      final picked = files.take(6).toList();
+      final rows = <dynamic>[];
+      final failed = <int>[];
+      String lastErr = '';
+      var done = 0;
+      Future<void> one(int idx) async {
+        try {
+          final b64 = base64Encode(await picked[idx].readAsBytes());
+          final res = await sb.functions.invoke('exam-from-photo', body: {'images': [b64]}).timeout(const Duration(seconds: 95));
+          final out = res.data;
+          if (out is Map && out['questions'] is List) rows.addAll(out['questions'] as List);
+        } catch (e) {
+          failed.add(idx + 1);
+          final t = '$e';
+          lastErr = t.contains('Timeout') ? 'الصورة خدت وقت طويل، جرّب صورة أوضح أو أصغر.'
+              : t.contains('429') ? 'الخدمة مزدحمة، استنى دقيقة وجرّب تاني.'
+              : (t.contains('SocketException') || t.contains('ClientException')) ? 'مفيش اتصال بالنت أو النت ضعيف.'
+              : t.contains('401') ? 'سجّل دخول تاني وجرّب.' : 'الخدمة مش متاحة دلوقتي، جرّب تاني بعد شوية.';
+        }
+        done++;
+        if (mounted) { ScaffoldMessenger.of(context).hideCurrentSnackBar(); toast(context, 'خلّصت $done من ${picked.length} صورة'); }
+      }
+      var next = 0;
+      Future<void> worker() async { while (next < picked.length) { final i = next++; await one(i); } }
+      await Future.wait([worker(), worker()]);
+      if (rows.isEmpty && failed.isNotEmpty) throw lastErr;
+      if (rows.isEmpty) throw 'مش لاقي أسئلة اختيار من متعدد في الصور. صوّر أوضح وجرّب تاني.';
+      var ord = _questions.length;
+      var added = 0;
+      final guessed = <int>[];
+      for (final q in rows) {
+        if (q is! Map || q['choices'] is! List) continue;
+        final choices = (q['choices'] as List).map((c) => '$c').toList();
+        if (choices.length < 2) continue;
+        var correct = q['correct'] is int ? q['correct'] as int : (int.tryParse('${q['correct']}') ?? 0);
+        if (correct < 0 || correct >= choices.length) correct = 0;
+        if (q['answer_source'] == 'guessed') guessed.add(ord + 1);
+        await sb.from('questions').insert({
+          'exam_id': _exam['id'], 'ord': ord, 'text': '${q['text'] ?? ''}', 'type': 'mcq',
+          'points': 1, 'choices': choices, 'correct': correct, 'accepted': null,
+        });
+        ord++; added++;
+      }
+      if (added == 0) throw 'مش لاقي أسئلة صالحة في الصور. جرّب تاني.';
+      if (mounted) {
+        await showDialog(context: context, builder: (_) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('اتضافت الأسئلة'),
+            content: Text('اتضاف $added سؤال من الصور.' + (failed.isEmpty ? '' : '\n\nالصور رقم ${failed.join('، ')} ماتقراتش ($lastErr) جرّبهم تاني.') + (guessed.isEmpty ? '' : '\n\nالإجابة الصحيحة للأسئلة رقم ${guessed.join('، ')} مكانتش معلّمة في الصورة والذكاء الاصطناعي اختارها — راجعها.') + '\n\nراجع الأسئلة والاختيارات كويس (القراءة من الصور ممكن تغلط).'),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('تمام'))],
+          ),
+        ));
+      }
+      _load();
+    } catch (e) {
+      if (mounted) toast(context, e is String ? e : 'الخدمة مش متاحة دلوقتي، جرّب تاني بعد شوية.', err: true);
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _editQuestion(Map? q) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context, isScrollControlled: true,
+      builder: (_) => Padding(padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom), child: QuestionSheet(examId: _exam['id'], question: q, ord: _questions.length)),
+    );
+    if (saved == true) _load();
+  }
+
+  Future<void> _delQuestion(Map q) async {
+    final yes = await _confirm(context, 'حذف السؤال ده؟');
+    if (yes != true) return;
+    try { await sb.from('questions').delete().eq('id', q['id']); _load(); } catch (_) {
+      if (mounted) toast(context, 'حصلت مشكلة', err: true);
+    }
+  }
+
+  Widget _codesTab() {
+    final openLink = '$kSiteUrl?open=${_exam['open_token'] ?? ''}';
+    return ListView(padding: const EdgeInsets.all(16), children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('لينك مفتوح', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('أي حد معاه اللينك يدخل يكتب اسمه ويحل (من غير كود).', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            SwitchListTile(
+              value: _exam['open_enabled'] == true, dense: true, contentPadding: EdgeInsets.zero,
+              title: const Text('تفعيل اللينك المفتوح'),
+              onChanged: (v) async {
+                final row = <String, dynamic>{'open_enabled': v};
+                if (v && (_exam['open_token'] == null)) row['open_token'] = newToken();
+                try {
+                  await sb.from('exams').update(row).eq('id', _exam['id']);
+                  _load();
+                } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+              },
+            ),
+            if (_exam['open_enabled'] == true && _exam['open_token'] != null)
+              OutlinedButton.icon(
+                onPressed: () { Clipboard.setData(ClipboardData(text: openLink)); toast(context, 'اللينك اتنسخ'); },
+                icon: const Icon(Icons.copy, size: 18), label: const Text('نسخ اللينك'),
+              ),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('كود لطالب', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('كل كود بيشتغل مرة واحدة بس للطالب اللي هتكتب اسمه.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(onPressed: _addCode, icon: const Icon(Icons.person_add), label: const Text('إنشاء كود')),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ..._codes.map((c) => Card(
+            child: ListTile(
+              leading: Icon(c['status'] == 'completed' ? Icons.check_circle : c['status'] == 'in_progress' ? Icons.timelapse : Icons.key,
+                  color: c['status'] == 'completed' ? kTeal : c['status'] == 'in_progress' ? kGold : Colors.grey),
+              title: Text(c['student_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text('${c['via'] == 'open' ? 'دخل باللينك' : 'الكود: ${c['token']}'} • ${_codeStatus(c['status'])}'),
+              trailing: c['via'] == 'open'
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.copy, size: 20),
+                      onPressed: () { Clipboard.setData(ClipboardData(text: c['token'] ?? '')); toast(context, 'الكود اتنسخ'); },
+                    ),
+            ),
+          )),
+    ]);
+  }
+
+  String _codeStatus(String? s) => {'unused': 'مستني', 'in_progress': 'بيحل دلوقتي', 'completed': 'خلّص'}[s] ?? (s ?? '');
+
+  Future<void> _addCode() async {
+    final name = TextEditingController();
+    final phone = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('كود جديد'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم الطالب *')),
+            const SizedBox(height: 10),
+            TextField(controller: phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                decoration: const InputDecoration(labelText: 'موبايل ولي الأمر (اختياري)')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إنشاء')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || name.text.trim().isEmpty) return;
+    try {
+      // upsert student record too (for the students list)
+      final uid = sb.auth.currentUser!.id;
+      await sb.from('students').insert({'teacher_id': uid, 'name': name.text.trim(), 'parent_phone': phone.text.trim()});
+      await sb.from('codes').insert({
+        'exam_id': _exam['id'], 'student_name': name.text.trim(), 'token': newToken(), 'parent_phone': phone.text.trim(),
+      });
+      _load();
+      if (mounted) toast(context, 'الكود اتعمل');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Widget _resultsTab() {
+    if (_subs.isEmpty) return Center(child: Text('مفيش نتايج لسه.', style: TextStyle(color: Colors.grey.shade600)));
+    final passPct = (_exam['pass_pct'] ?? 50) as num;
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _subs.length,
+      itemBuilder: (_, i) {
+        final s = _subs[i];
+        final name = s['exam_sessions']?['codes']?['student_name'] ?? '';
+        final score = s['auto_score'] as num, total = s['auto_total'] as num;
+        final p = total == 0 ? 0 : (score / total * 100).round();
+        final passed = p >= passPct;
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: (passed ? kTeal : Colors.red).withOpacity(0.15),
+              child: Icon(passed ? Icons.check : Icons.close, color: passed ? kTeal : Colors.red),
+            ),
+            title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text('${s['correct_count']}/${s['n_auto']} صح • الوقت: ${(s['time_sec'] as num) ~/ 60}:${((s['time_sec'] as num) % 60).toString().padLeft(2, '0')}${s['auto'] == true ? ' • تسليم تلقائي' : ''}'),
+            trailing: Text('$score/$total\n($p%)', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------- Question editor sheet ----------
+class QuestionSheet extends StatefulWidget {
+  final String examId;
+  final Map? question;
+  final int ord;
+  const QuestionSheet({super.key, required this.examId, this.question, required this.ord});
+  @override
+  State<QuestionSheet> createState() => _QuestionSheetState();
+}
+
+class _QuestionSheetState extends State<QuestionSheet> {
+  final _text = TextEditingController();
+  final _points = TextEditingController(text: '1');
+  final _accepted = TextEditingController();
+  String _type = 'mcq';
+  List<TextEditingController> _choices = [TextEditingController(), TextEditingController()];
+  int _correct = 0;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final q = widget.question;
+    if (q != null) {
+      _text.text = q['text'] ?? ''; _type = q['type'] ?? 'mcq';
+      _points.text = '${q['points'] ?? 1}';
+      if (_type == 'mcq' && q['choices'] is List) {
+        _choices = (q['choices'] as List).map((c) => TextEditingController(text: '$c')).toList();
+        if (_choices.length < 2) while (_choices.length < 2) { _choices.add(TextEditingController()); }
+        _correct = q['correct'] ?? 0;
+      }
+      if (_type == 'sa' && q['accepted'] is List) _accepted.text = (q['accepted'] as List).join('، ');
+      if (_type == 'tf') _correct = q['correct'] ?? 0;
+    }
+  }
+
+  Future<void> _save() async {
+    if (_text.text.trim().isEmpty) { toast(context, 'اكتب نص السؤال', err: true); return; }
+    if (_type == 'mcq' && _choices.where((c) => c.text.trim().isNotEmpty).length < 2) {
+      toast(context, 'لازم اختيارين على الأقل', err: true); return;
+    }
+    setState(() => _busy = true);
+    final row = <String, dynamic>{
+      'exam_id': widget.examId, 'text': _text.text.trim(), 'type': _type,
+      'points': (num.tryParse(_points.text) ?? 1).clamp(0.5, 100),
+      'choices': null, 'correct': null, 'accepted': null,
+    };
+    if (_type == 'mcq') {
+      final cs = _choices.map((c) => c.text.trim()).where((c) => c.isNotEmpty).toList();
+      row['choices'] = cs;
+      row['correct'] = _correct.clamp(0, cs.length - 1);
+    } else if (_type == 'tf') {
+      row['choices'] = ['صح', 'غلط'];
+      row['correct'] = _correct;
+    } else if (_type == 'sa') {
+      row['accepted'] = _accepted.text.split(RegExp('[،,]')).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+    try {
+      if (widget.question == null) {
+        row['ord'] = widget.ord;
+        await sb.from('questions').insert(row);
+      } else {
+        await sb.from('questions').update(row).eq('id', widget.question!['id']);
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (mounted) { toast(context, 'حصلت مشكلة في الحفظ', err: true); setState(() => _busy = false); }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: ListView(shrinkWrap: true, children: [
+          Text(widget.question == null ? 'سؤال جديد' : 'تعديل السؤال', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'mcq', label: Text('اختياري')),
+              ButtonSegment(value: 'tf', label: Text('صح/غلط')),
+              ButtonSegment(value: 'sa', label: Text('قصيرة')),
+              ButtonSegment(value: 'essay', label: Text('مقالي')),
+            ],
+            selected: {_type},
+            onSelectionChanged: (s) => setState(() => _type = s.first),
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: _text, maxLines: 3, decoration: const InputDecoration(labelText: 'نص السؤال *')),
+          const SizedBox(height: 12),
+          if (_type == 'mcq') ...[
+            const Text('الاختيارات (علّم على الإجابة الصح):', style: TextStyle(fontWeight: FontWeight.w700)),
+            ...List.generate(_choices.length, (i) => Row(children: [
+                  Radio<int>(value: i, groupValue: _correct, onChanged: (v) => setState(() => _correct = v!)),
+                  Expanded(child: TextField(controller: _choices[i], decoration: InputDecoration(labelText: 'اختيار ${i + 1}'))),
+                  if (_choices.length > 2)
+                    IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () => setState(() => _choices.removeAt(i))),
+                ])),
+            TextButton.icon(onPressed: () => setState(() => _choices.add(TextEditingController())), icon: const Icon(Icons.add), label: const Text('ضيف اختيار')),
+          ],
+          if (_type == 'tf')
+            Row(children: [
+              Expanded(child: RadioListTile<int>(value: 0, groupValue: _correct, onChanged: (v) => setState(() => _correct = v!), title: const Text('صح'))),
+              Expanded(child: RadioListTile<int>(value: 1, groupValue: _correct, onChanged: (v) => setState(() => _correct = v!), title: const Text('غلط'))),
+            ]),
+          if (_type == 'sa')
+            TextField(controller: _accepted, decoration: const InputDecoration(labelText: 'الإجابات المقبولة (افصل بينهم بفاصلة)')),
+          const SizedBox(height: 12),
+          TextField(controller: _points, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'الدرجة')),
+          const SizedBox(height: 16),
+          BusyBtn(label: 'حفظ السؤال', busy: _busy, onTap: _save, icon: Icons.check),
+        ]),
+      ),
+    );
+  }
+}
+
+Future<bool?> _confirm(BuildContext context, String msg) {
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        content: Text(msg),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لأ')),
+          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () => Navigator.pop(ctx, true), child: const Text('أيوه')),
+        ],
+      ),
+    ),
+  );
+}
+
+===== FILE: lib/teacher/faqs.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class FaqsPage extends StatefulWidget {
+  const FaqsPage({super.key});
+  @override
+  State<FaqsPage> createState() => _FaqsPageState();
+}
+
+class _FaqsPageState extends State<FaqsPage> {
+  List _faqs = [];
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final r = await sb.from('faqs').select().order('created_at');
+      if (mounted) setState(() { _faqs = r; _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  Future<void> _add() async {
+    final q = TextEditingController();
+    final a = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('سؤال متكرر جديد'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: q, maxLines: 2, decoration: const InputDecoration(labelText: 'السؤال *')),
+            const SizedBox(height: 10),
+            TextField(controller: a, maxLines: 4, decoration: const InputDecoration(labelText: 'الإجابة *')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('أضف')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || q.text.trim().isEmpty || a.text.trim().isEmpty) return;
+    try {
+      await sb.from('faqs').insert({'teacher_id': sb.auth.currentUser!.id, 'question': q.text.trim(), 'answer': a.text.trim()});
+      _load();
+      if (mounted) toast(context, 'السؤال اتضاف للبوت');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Future<void> _delete(String id) async {
+    final yes = await showDialog<bool>(context: context, builder: (ctx) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(title: const Text('حذف السؤال ده؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لا')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('احذف'))])));
+    if (yes != true) return;
+    try { await sb.from('faqs').delete().eq('id', id); _load(); } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('بوت الأسئلة المتكررة')),
+        floatingActionButton: FloatingActionButton.extended(onPressed: _add, icon: const Icon(Icons.add_comment_outlined), label: const Text('سؤال جديد')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _faqs.isEmpty
+                ? Center(child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text('البوت لسه فاضي. ضيف الأسئلة اللي الطلبة بتسألها كتير وإجاباتها، والبوت هيرد بيها في تطبيق الطلبة.',
+                        textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600))))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _faqs.length,
+                      itemBuilder: (_, i) {
+                        final f = _faqs[i];
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(backgroundColor: kTeal.withOpacity(0.15), child: const Icon(Icons.smart_toy_outlined, color: kNavy)),
+                            title: Text(f['question'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                            subtitle: Text(f['answer'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                            trailing: IconButton(icon: Icon(Icons.delete_outline, color: Colors.red.shade400), onPressed: () => _delete(f['id'])),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/home.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+import 'exams.dart';
+import 'videos.dart';
+import 'settings.dart';
+import 'students.dart';
+import 'codes.dart';
+import 'tracking.dart';
+import 'results.dart';
+import 'analytics.dart';
+import 'reports.dart';
+import 'faqs.dart';
+
+class TeacherHome extends StatefulWidget {
+  const TeacherHome({super.key});
+  @override
+  State<TeacherHome> createState() => _TeacherHomeState();
+}
+
+class _TeacherHomeState extends State<TeacherHome> {
+  int _tab = 0;
+  @override
+  Widget build(BuildContext context) {
+    final pages = [const DashboardTab(), const ExamsTab(), const VideosTab(), const MoreTab()];
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: pages[_tab],
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tab,
+          onDestinationSelected: (i) => setState(() => _tab = i),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'الرئيسية'),
+            NavigationDestination(icon: Icon(Icons.assignment_outlined), selectedIcon: Icon(Icons.assignment), label: 'الامتحانات'),
+            NavigationDestination(icon: Icon(Icons.play_circle_outline), selectedIcon: Icon(Icons.play_circle), label: 'الفيديوهات'),
+            NavigationDestination(icon: Icon(Icons.grid_view_outlined), selectedIcon: Icon(Icons.grid_view), label: 'المزيد'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DashboardTab extends StatefulWidget {
+  const DashboardTab({super.key});
+  @override
+  State<DashboardTab> createState() => _DashboardTabState();
+}
+
+class _DashboardTabState extends State<DashboardTab> {
+  Map<String, int> _stats = {};
+  List _recent = [];
+  String _name = '';
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final uid = sb.auth.currentUser!.id;
+      final prof = await sb.from('profiles').select().eq('id', uid).maybeSingle();
+      final exams = await sb.from('exams').select('id').eq('teacher_id', uid).count();
+      final students = await sb.from('students').select('id').eq('teacher_id', uid).count();
+      final subs = await sb.from('video_students').select('id').eq('teacher_id', uid).eq('active', true).count();
+      final recentExams = await sb.from('exams').select('id, title, subject, published, created_at').eq('teacher_id', uid).order('created_at', ascending: false).limit(5);
+      // attempts count: codes joined via exams
+      int attempts = 0;
+      final exIds = (recentExams as List).map((e) => e['id']).toList();
+      if (exIds.isNotEmpty) {
+        final c = await sb.from('codes').select('id').inFilter('exam_id', exIds).count();
+        attempts = c.count;
+      }
+      if (mounted) setState(() {
+        _name = (prof?['display_name'] ?? '') as String;
+        _stats = {'exams': exams.count, 'students': students.count, 'subs': subs.count, 'attempts': attempts};
+        _recent = recentExams;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('لوحة التحكم')),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          Text(_name.isEmpty ? 'أهلًا بيك يا مستر 👋' : 'أهلًا بيك يا مستر $_name 👋',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          if (_loading) const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+          else ...[
+            GridView.count(
+              crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.6,
+              children: [
+                _stat('الامتحانات', _stats['exams'] ?? 0, Icons.assignment, kNavy),
+                _stat('الطلبة', _stats['students'] ?? 0, Icons.school, kTeal),
+                _stat('محاولات (آخر ٥ امتحانات)', _stats['attempts'] ?? 0, Icons.edit_note, kGold),
+                _stat('مشتركي الفيديو', _stats['subs'] ?? 0, Icons.play_circle, Colors.purple),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text('أحدث الامتحانات', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            if (_recent.isEmpty)
+              Card(child: Padding(padding: const EdgeInsets.all(24), child: Text('مفيش امتحانات لسه. اعمل أول امتحان من تاب الامتحانات.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600))))
+            else
+              ..._recent.map((e) => Card(
+                    child: ListTile(
+                      leading: Icon(Icons.assignment, color: e['published'] == true ? kTeal : Colors.grey),
+                      title: Text(e['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: Text('${e['subject'] ?? ''} • ${e['published'] == true ? 'منشور' : 'مسودة'}'),
+                    ),
+                  )),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _stat(String label, int v, IconData icon, Color color) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, color: color, size: 26),
+          const SizedBox(height: 6),
+          Text('$v', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          Text(label, style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600), textAlign: TextAlign.center),
+        ]),
+      ),
+    );
+  }
+}
+
+class MoreTab extends StatelessWidget {
+  const MoreTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <(String, IconData, Widget)>[
+      ('الطلبة', Icons.groups_outlined, const StudentsPage()),
+      ('أكواد الطلبة', Icons.key_outlined, const CodesPage()),
+      ('متابعة الطلبة', Icons.track_changes, const TrackingPage()),
+      ('النتايج وتصحيح المقالي', Icons.fact_check_outlined, const ResultsPage()),
+      ('التحليلات', Icons.bar_chart, const AnalyticsPage()),
+      ('تقارير أولياء الأمور', Icons.assignment_ind_outlined, const ReportsPage()),
+      ('بوت الأسئلة المتكررة', Icons.smart_toy_outlined, const FaqsPage()),
+      ('الإعدادات', Icons.settings_outlined, const SettingsTab()),
+    ];
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('المزيد')),
+        body: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length,
+          itemBuilder: (_, i) {
+            final it = items[i];
+            return Card(
+              child: ListTile(
+                leading: CircleAvatar(backgroundColor: kNavy.withOpacity(0.08), child: Icon(it.$2, color: kNavy)),
+                title: Text(it.$1, style: const TextStyle(fontWeight: FontWeight.w700)),
+                trailing: const Icon(Icons.chevron_left),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => it.$3)),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/reports.dart =====
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../src/core.dart';
+
+class ReportsPage extends StatefulWidget {
+  const ReportsPage({super.key});
+  @override
+  State<ReportsPage> createState() => _ReportsPageState();
+}
+
+class _ReportsPageState extends State<ReportsPage> {
+  List _subs = [];
+  List _students = [];
+  Map<String, Map<String, num>> _gmap = {};
+  Map<String, List> _examQuestions = {};
+  final Map<String, TextEditingController> _phones = {};
+  final Set<String> _open = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final subs = await sb.from('submissions')
+          .select('*, exam_sessions(code_id, codes(student_name, parent_phone, exam_id, exams(id,title,subject,grade,pass_pct)))')
+          .order('submitted_at', ascending: false);
+      final st = await sb.from('students').select('name,parent_phone');
+      final grades = await sb.from('essay_grades').select('*');
+      final gmap = <String, Map<String, num>>{};
+      for (final g in grades) {
+        gmap.putIfAbsent(g['submission_id'] as String, () => {})[g['question_id'] as String] = g['awarded'] as num;
+      }
+      final qmap = <String, List>{};
+      final examIds = <String>{};
+      for (final s in subs) {
+        final ex = s['exam_sessions']?['codes']?['exams'];
+        if (ex != null) examIds.add(ex['id'] as String);
+      }
+      for (final id in examIds) {
+        qmap[id] = await sb.from('questions').select('id,text,type,points').eq('exam_id', id).order('ord');
+      }
+      if (mounted) setState(() { _subs = subs; _students = st; _gmap = gmap; _examQuestions = qmap; _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  Map<String, dynamic> _report(Map s) {
+    final codes = s['exam_sessions']?['codes'] ?? {};
+    final ex = codes['exams'] ?? {};
+    final qs = _examQuestions[ex['id']] ?? [];
+    final essays = qs.where((q) => q['type'] == 'essay').toList();
+    final essayMax = essays.fold<num>(0, (a, q) => a + (q['points'] as num));
+    final gm = _gmap[s['id']] ?? {};
+    final awarded = gm.values.fold<num>(0, (a, b) => a + b);
+    final pending = essays.isNotEmpty && essays.any((q) => !gm.containsKey(q['id']));
+    final score = (s['auto_score'] as num) + awarded;
+    final total = (s['auto_total'] as num) + essayMax;
+    final pct = total == 0 ? 0.0 : (score * 1000 / total).round() / 10;
+    final wrong = <String>[];
+    final auto = qs.where((q) => q['type'] != 'essay').toList();
+    final bitmap = (s['bitmap'] ?? '') as String;
+    for (var i = 0; i < auto.length && i < bitmap.length; i++) {
+      if (bitmap[i] == '0') wrong.add(auto[i]['text'].toString());
+    }
+    final level = pct >= 85 ? 'ممتاز' : pct >= 75 ? 'جيد جدًا' : pct >= 65 ? 'جيد' : pct >= 50 ? 'مقبول' : 'ضعيف - يحتاج دعم';
+    final passPct = ex['pass_pct'] ?? 50;
+    final date = DateTime.tryParse(s['submitted_at'] ?? '')?.toLocal();
+    final lines = <String>[
+      'تقرير أداء الطالب: ${codes['student_name'] ?? ''}',
+      'الامتحان: ${ex['title'] ?? ''}${(ex['subject'] ?? '').toString().isNotEmpty ? ' (${ex['subject']})' : ''}',
+      if ((ex['grade'] ?? '').toString().isNotEmpty) 'الصف: ${ex['grade']}',
+      'التاريخ: ${date == null ? '' : '${date.day}/${date.month}/${date.year}'} - الوقت المستغرق: ${((s['time_sec'] as num) / 60).round()} دقيقة',
+      'الدرجة: $score من $total ($pct%)${pending ? ' - مبدئية، في انتظار تصحيح المقالي' : ''}',
+      'التقدير: $level${pct >= passPct ? ' - ناجح' : ' - لم يصل لدرجة النجاح ($passPct%)'}',
+      'إجابات صحيحة: ${s['correct_count']} - خاطئة أو بدون إجابة: ${(s['n_auto'] as num) - (s['correct_count'] as num)}',
+      wrong.isNotEmpty ? 'محتاج يراجع: ${wrong.take(3).join(' | ')}' : 'مفيش نقاط ضعف واضحة في الأسئلة الموضوعية.',
+    ];
+    return {'text': lines.join('\n'), 'pct': pct, 'pending': pending};
+  }
+
+  String _phoneFor(Map s) {
+    final codes = s['exam_sessions']?['codes'] ?? {};
+    final name = codes['student_name'] ?? '';
+    final match = _students.firstWhere((x) => x['name'] == name, orElse: () => null);
+    return (match?['parent_phone'] ?? codes['parent_phone'] ?? '').toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('تقارير أولياء الأمور')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _subs.isEmpty
+                ? Center(child: Text('مفيش نتايج لسه.', style: TextStyle(color: Colors.grey.shade600)))
+                : ListView(padding: const EdgeInsets.all(16), children: [
+                    Card(
+                      color: kGold.withOpacity(0.12),
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text('راجع التقرير واضغط «إرسال واتساب» - هيتفتح واتساب بالتقرير جاهز لولي الأمر. الإرسال بضغطة منك بعد المراجعة، مش أوتوماتيك.',
+                            style: TextStyle(fontSize: 12.5, height: 1.5)),
+                      ),
+                    ),
+                    ..._subs.map((s) {
+                      final codes = s['exam_sessions']?['codes'] ?? {};
+                      final ex = codes['exams'] ?? {};
+                      final r = _report(s);
+                      _phones.putIfAbsent(s['id'], () => TextEditingController(text: _phoneFor(s)));
+                      final isOpen = _open.contains(s['id']);
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            Row(children: [
+                              Expanded(child: Text(codes['student_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5))),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: (r['pending'] == true ? kGold : kTeal).withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                                child: Text(r['pending'] == true ? 'مبدئي' : 'نهائي',
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: r['pending'] == true ? kGold : kTeal)),
+                              ),
+                            ]),
+                            Text('${ex['title'] ?? ''} • ${r['pct']}%', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                            if (isOpen) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(12)),
+                                child: SelectableText(r['text'], style: const TextStyle(fontSize: 13, height: 1.7)),
+                              ),
+                            ],
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _phones[s['id']],
+                              keyboardType: TextInputType.phone,
+                              textDirection: TextDirection.ltr,
+                              textAlign: TextAlign.left,
+                              decoration: const InputDecoration(labelText: 'رقم واتساب ولي الأمر', isDense: true),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(children: [
+                              Expanded(child: OutlinedButton.icon(
+                                onPressed: () => setState(() => isOpen ? _open.remove(s['id']) : _open.add(s['id'])),
+                                icon: Icon(isOpen ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18),
+                                label: Text(isOpen ? 'إخفاء' : 'عرض التقرير', style: const TextStyle(fontSize: 13)),
+                              )),
+                              const SizedBox(width: 8),
+                              Expanded(child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(42)),
+                                onPressed: () {
+                                  final ph = _phones[s['id']]!.text.trim();
+                                  if (ph.isEmpty) { toast(context, 'اكتب رقم ولي الأمر الأول', err: true); return; }
+                                  launchUrl(waLink(ph, r['text']), mode: LaunchMode.externalApplication);
+                                },
+                                icon: const Icon(Icons.send, size: 18),
+                                label: const Text('إرسال واتساب', style: TextStyle(fontSize: 13)),
+                              )),
+                            ]),
+                          ]),
+                        ),
+                      );
+                    }),
+                  ]),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/results.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class ResultsPage extends StatefulWidget {
+  const ResultsPage({super.key});
+  @override
+  State<ResultsPage> createState() => _ResultsPageState();
+}
+
+class _ResultsPageState extends State<ResultsPage> {
+  List _subs = [];
+  Map<String, Map<String, num>> _gmap = {};
+  Map<String, List> _examQuestions = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final subs = await sb.from('submissions')
+          .select('*, exam_sessions(code_id, codes(token, student_name, parent_phone, exam_id, exams(id,title,subject,grade,pass_pct)))')
+          .order('submitted_at', ascending: false);
+      final grades = await sb.from('essay_grades').select('*');
+      final gmap = <String, Map<String, num>>{};
+      for (final g in grades) {
+        gmap.putIfAbsent(g['submission_id'] as String, () => {})[g['question_id'] as String] = g['awarded'] as num;
+      }
+      final examIds = <String>{};
+      for (final s in subs) {
+        final ex = s['exam_sessions']?['codes']?['exams'];
+        if (ex != null) examIds.add(ex['id'] as String);
+      }
+      final qmap = <String, List>{};
+      for (final id in examIds) {
+        qmap[id] = await sb.from('questions').select('id,text,type,points').eq('exam_id', id).order('ord');
+      }
+      if (mounted) setState(() { _subs = subs; _gmap = gmap; _examQuestions = qmap; _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  Map<String, dynamic> _calc(Map s) {
+    final ex = s['exam_sessions']?['codes']?['exams'] ?? {};
+    final qs = _examQuestions[ex['id']] ?? [];
+    final essays = qs.where((q) => q['type'] == 'essay').toList();
+    final essayMax = essays.fold<num>(0, (a, q) => a + (q['points'] as num));
+    final gm = _gmap[s['id']] ?? {};
+    final awarded = gm.values.fold<num>(0, (a, b) => a + b);
+    final pending = essays.isNotEmpty && essays.any((q) => !gm.containsKey(q['id']));
+    final score = (s['auto_score'] as num) + awarded;
+    final total = (s['auto_total'] as num) + essayMax;
+    final pct = total == 0 ? 0 : (score / total * 1000).round() / 10;
+    return {'score': score, 'total': total, 'pct': pct, 'pending': pending, 'passPct': ex['pass_pct'] ?? 50};
+  }
+
+  Future<void> _deleteSub(Map s) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('حذف النتيجة؟'),
+          content: Text('هتمسح نتيجة ${s['exam_sessions']?['codes']?['student_name'] ?? ''} نهائيًا.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لأ')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('أيوه، احذف')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try { await sb.from('submissions').delete().eq('id', s['id']); _load(); } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Future<void> _gradeEssays(Map s) async {
+    final ex = s['exam_sessions']?['codes']?['exams'] ?? {};
+    final qs = (_examQuestions[ex['id']] ?? []).where((q) => q['type'] == 'essay').toList();
+    if (qs.isEmpty) { toast(context, 'الامتحان ده مفيهوش أسئلة مقالية'); return; }
+    final ans = await sb.from('answers').select('*').eq('session_id', s['session_id']);
+    final amap = {for (final a in ans) a['question_id'] as String: a['answer']};
+    final gm = _gmap[s['id']] ?? {};
+    if (!mounted) return;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: EssayGradeSheet(submissionId: s['id'], questions: qs, answers: amap, grades: gm),
+        ),
+      ),
+    );
+    if (saved == true) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('النتايج وتصحيح المقالي')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _subs.isEmpty
+                ? Center(child: Text('مفيش نتايج لسه. أول ما الطلبة يسلّموا هتظهر هنا.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600)))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _subs.length,
+                      itemBuilder: (_, i) {
+                        final s = _subs[i];
+                        final c = _calc(s);
+                        final codes = s['exam_sessions']?['codes'] ?? {};
+                        final ex = codes['exams'] ?? {};
+                        final passed = (c['pct'] as num) >= (c['passPct'] as num);
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              Row(children: [
+                                Expanded(child: Text(codes['student_name'] ?? '—', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5))),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(color: (c['pending'] == true ? kGold : (passed ? kTeal : Colors.red)).withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                                  child: Text(c['pending'] == true ? 'مبدئي' : (passed ? 'ناجح' : 'راسب'),
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c['pending'] == true ? kGold : (passed ? kTeal : Colors.red))),
+                                ),
+                              ]),
+                              const SizedBox(height: 4),
+                              Text('${ex['title'] ?? ''} • تلقائي: ${s['auto_score']}/${s['auto_total']} • صح ${s['correct_count']} من ${s['n_auto']}',
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5)),
+                              Text('النهائي: ${c['score']}/${c['total']} (${c['pct']}%) • ${((s['time_sec'] as num) / 60).round()} دقيقة',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                              const SizedBox(height: 8),
+                              Row(children: [
+                                Expanded(child: OutlinedButton.icon(onPressed: () => _gradeEssays(s), icon: const Icon(Icons.rate_review_outlined, size: 18), label: const Text('المقالي', style: TextStyle(fontSize: 13)))),
+                                const SizedBox(width: 8),
+                                IconButton(icon: Icon(Icons.delete_outline, color: Colors.red.shade400), onPressed: () => _deleteSub(s)),
+                              ]),
+                            ]),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+      ),
+    );
+  }
+}
+
+class EssayGradeSheet extends StatefulWidget {
+  final String submissionId;
+  final List questions;
+  final Map<String, dynamic> answers;
+  final Map<String, num> grades;
+  const EssayGradeSheet({super.key, required this.submissionId, required this.questions, required this.answers, required this.grades});
+  @override
+  State<EssayGradeSheet> createState() => _EssayGradeSheetState();
+}
+
+class _EssayGradeSheetState extends State<EssayGradeSheet> {
+  final _ctrls = <String, TextEditingController>{};
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final q in widget.questions) {
+      _ctrls[q['id']] = TextEditingController(text: widget.grades[q['id']]?.toString() ?? '');
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      for (final q in widget.questions) {
+        final t = _ctrls[q['id']]!.text.trim();
+        if (t.isEmpty) continue;
+        final max = (q['points'] as num).toDouble();
+        final v = (double.tryParse(t) ?? 0).clamp(0, max);
+        await sb.from('essay_grades').upsert({'submission_id': widget.submissionId, 'question_id': q['id'], 'awarded': v});
+      }
+      if (mounted) { Navigator.pop(context, true); toast(context, 'التصحيح اتحفظ'); }
+    } catch (_) { if (mounted) { setState(() => _busy = false); toast(context, 'حصلت مشكلة', err: true); } }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false, initialChildSize: 0.85, maxChildSize: 0.95,
+      builder: (_, sc) => ListView(controller: sc, padding: const EdgeInsets.all(20), children: [
+        const Text('تصحيح المقالي', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        ...widget.questions.map((q) {
+          final ans = widget.answers[q['id']];
+          String ansText = '(الطالب مكتبش إجابة)';
+          if (ans != null) {
+            ansText = ans is String ? ans : (ans['text'] ?? ans.toString());
+          }
+          return Card(
+            color: kBg,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('${q['text']} (من ${q['points']})', style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  child: Text(ansText, style: TextStyle(color: Colors.grey.shade800, height: 1.5)),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _ctrls[q['id']],
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textDirection: TextDirection.ltr,
+                  decoration: InputDecoration(labelText: 'الدرجة (حد أقصى ${q['points']})'),
+                ),
+              ]),
+            ),
+          );
+        }),
+        const SizedBox(height: 10),
+        BusyBtn(label: 'احفظ التصحيح', busy: _busy, onTap: _save, icon: Icons.save_outlined),
+      ]),
+    );
+  }
+}
+
+===== FILE: lib/teacher/settings.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class SettingsTab extends StatefulWidget {
+  const SettingsTab({super.key});
+  @override
+  State<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<SettingsTab> {
+  final _name = TextEditingController();
+  final _phone = TextEditingController();
+  final _duration = TextEditingController();
+  final _pass = TextEditingController();
+  bool _loading = true, _busy = false;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final uid = sb.auth.currentUser!.id;
+      final p = await sb.from('profiles').select().eq('id', uid).maybeSingle();
+      if (mounted) setState(() {
+        _name.text = p?['display_name'] ?? '';
+        _phone.text = p?['phone'] ?? '';
+        _duration.text = '${p?['default_duration'] ?? 15}';
+        _pass.text = '${p?['default_pass_pct'] ?? 50}';
+        _loading = false;
+      });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      final uid = sb.auth.currentUser!.id;
+      await sb.from('profiles').upsert({
+        'id': uid, 'display_name': _name.text.trim(), 'phone': _phone.text.trim(),
+        'default_duration': int.tryParse(_duration.text) ?? 15,
+        'default_pass_pct': int.tryParse(_pass.text) ?? 50,
+      });
+      if (mounted) toast(context, 'اتحفظ');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الإعدادات')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(padding: const EdgeInsets.all(16), children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    const Text('الملف الشخصي', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    const SizedBox(height: 12),
+                    TextField(controller: _name, decoration: const InputDecoration(labelText: 'اسمك (بيظهر للطلبة)')),
+                    const SizedBox(height: 12),
+                    TextField(controller: _phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                        decoration: const InputDecoration(labelText: 'رقم الواتساب بتاعك')),
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Expanded(child: TextField(controller: _duration, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'مدة افتراضية (دقيقة)'))),
+                      const SizedBox(width: 12),
+                      Expanded(child: TextField(controller: _pass, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'نجاح افتراضي %'))),
+                    ]),
+                    const SizedBox(height: 16),
+                    BusyBtn(label: 'حفظ', busy: _busy, onTap: _save, icon: Icons.check),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Column(children: [
+                  ListTile(
+                    leading: const Icon(Icons.lock_outline),
+                    title: const Text('تغيير كلمة السر'),
+                    subtitle: const Text('هيتبعت لينك إعادة التعيين على إيميلك'),
+                    onTap: () async {
+                      final email = sb.auth.currentUser?.email;
+                      if (email == null) return;
+                      try {
+                        await sb.auth.resetPasswordForEmail(email);
+                        if (context.mounted) toast(context, 'بعنالك لينك إعادة تعيين كلمة السر على إيميلك');
+                      } catch (_) { if (context.mounted) toast(context, 'حصلت مشكلة', err: true); }
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: const Text('عن المنصة'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutPage(teacher: true))),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text('تسجيل الخروج', style: TextStyle(color: Colors.red)),
+                    onTap: () async { await sb.auth.signOut(); },
+                  ),
+                ]),
+              ),
+            ]),
+    );
+  }
+}
+
+===== FILE: lib/teacher/students.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class StudentsPage extends StatefulWidget {
+  const StudentsPage({super.key});
+  @override
+  State<StudentsPage> createState() => _StudentsPageState();
+}
+
+class _StudentsPageState extends State<StudentsPage> {
+  List _students = [];
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final r = await sb.from('students').select().order('created_at');
+      if (mounted) setState(() { _students = r; _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'حصلت مشكلة في التحميل', err: true); } }
+  }
+
+  Future<void> _add() async {
+    final name = TextEditingController();
+    final phone = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('طالب جديد'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم الطالب *')),
+            const SizedBox(height: 10),
+            TextField(controller: phone, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                decoration: const InputDecoration(labelText: 'واتساب ولي الأمر (اختياري)')),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('أضف')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || name.text.trim().isEmpty) return;
+    try {
+      await sb.from('students').insert({'teacher_id': sb.auth.currentUser!.id, 'name': name.text.trim(), 'parent_phone': phone.text.trim()});
+      _load();
+      if (mounted) toast(context, 'الطالب اتسجل');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Future<void> _delete(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('حذف الطالب؟'),
+          content: const Text('درجاته وأكواده القديمة مش بتتمسح، بس هيشيله من سجل الطلبة.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لأ')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('أيوه، احذف')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try { await sb.from('students').delete().eq('id', id); _load(); } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('الطلبة')),
+        floatingActionButton: FloatingActionButton.extended(onPressed: _add, icon: const Icon(Icons.person_add_alt), label: const Text('طالب جديد')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _students.isEmpty
+                ? Center(child: Text('مفيش طلبة لسه. سجّل أول طالب من الزرار تحت.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600)))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _students.length,
+                      itemBuilder: (_, i) {
+                        final s = _students[i];
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(backgroundColor: kNavy.withOpacity(0.1), child: const Icon(Icons.person_outline, color: kNavy)),
+                            title: Text(s['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                            subtitle: Text((s['parent_phone'] ?? '').toString().isEmpty ? 'بدون رقم ولي أمر' : 'ولي الأمر: ${s['parent_phone']}'),
+                            trailing: IconButton(icon: Icon(Icons.delete_outline, color: Colors.red.shade400), onPressed: () => _delete(s['id'])),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/teacher/tracking.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class TrackingPage extends StatefulWidget {
+  const TrackingPage({super.key});
+  @override
+  State<TrackingPage> createState() => _TrackingPageState();
+}
+
+class _TrackingPageState extends State<TrackingPage> {
+  List _exams = [];
+  Map? _exam;
+  List _rows = [];
+  List _essays = [];
+  bool _loading = true;
+  DateTime _loadedAt = DateTime.now();
+  String _query = '';
+  String _filter = 'all';
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final exams = await sb.from('exams').select('id,title,duration_min').order('created_at', ascending: false);
+      if (!mounted) return;
+      if (exams.isEmpty) { setState(() { _exams = []; _exam = null; _loading = false; }); return; }
+      final exam = exams.firstWhere((e) => _exam != null && e['id'] == _exam!['id'], orElse: () => exams.first);
+      final codes = await sb.from('codes')
+          .select('id,student_name,status,exam_sessions(id,started_at,status,submissions(id,auto_score,auto_total,time_sec,submitted_at,essay_grades(question_id,awarded)))')
+          .eq('exam_id', exam['id']).order('created_at');
+      final essays = await sb.from('questions').select('id,points').eq('exam_id', exam['id']).eq('type', 'essay');
+      if (!mounted) return;
+      setState(() { _exams = exams; _exam = exam; _rows = codes; _essays = essays; _loadedAt = DateTime.now(); _loading = false; });
+    } catch (_) { if (mounted) { setState(() => _loading = false); toast(context, 'مش قادرين نحمّل المتابعة دلوقتي، جرب تاني', err: true); } }
+  }
+
+  Map<String, dynamic> _calc(Map c) {
+    final sessions = (c['exam_sessions'] as List?) ?? [];
+    final session = sessions.isEmpty ? null : sessions.first;
+    final subs = (session?['submissions'] as List?) ?? [];
+    final sub = subs.isEmpty ? null : subs.first;
+    final status = (sub != null || session?['status'] == 'submitted' || c['status'] == 'completed')
+        ? 'submitted'
+        : (session != null || c['status'] == 'in_progress')
+            ? 'in_progress'
+            : 'unused';
+    int? elapsed;
+    if (session?['started_at'] != null) {
+      elapsed = DateTime.now().difference(DateTime.parse(session!['started_at']).toLocal()).inSeconds.clamp(0, 1 << 31);
+    }
+    final overdue = status == 'in_progress' && elapsed != null && elapsed >= ((_exam?['duration_min'] ?? 15) as num) * 60;
+    final grades = (sub?['essay_grades'] as List?) ?? [];
+    final pending = sub != null && _essays.any((q) => !grades.any((g) => g['question_id'] == q['id']));
+    final awarded = _essays.fold<num>(0, (s, q) {
+      final g = grades.firstWhere((g) => g['question_id'] == q['id'], orElse: () => null);
+      return s + ((g?['awarded'] as num?) ?? 0);
+    });
+    num? score, total;
+    if (sub != null) {
+      score = (sub['auto_score'] as num) + awarded;
+      total = (sub['auto_total'] as num) + _essays.fold<num>(0, (s, q) => s + (q['points'] as num));
+    }
+    return {'status': status, 'elapsed': elapsed, 'overdue': overdue, 'pending': pending, 'score': score, 'total': total, 'sub': sub, 'session': session};
+  }
+
+  String _fmt(int sec) => '${sec ~/ 60}:${(sec % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = {'unused': 0, 'in_progress': 0, 'submitted': 0};
+    final calcRows = _rows.map((c) => {...c, '_c': _calc(c)}).toList();
+    for (final r in calcRows) { counts[r['_c']['status']] = (counts[r['_c']['status']] ?? 0) + 1; }
+    final filtered = calcRows.where((r) {
+      final st = r['_c']['status'];
+      return (_filter == 'all' || st == _filter) && (r['student_name'] ?? '').toString().contains(_query);
+    }).toList();
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('متابعة الطلبة'), actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)]),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _exam == null
+                ? Center(child: Text('مفيش امتحانات لسه. اعمل امتحان ووزّع الأكواد، والمتابعة هتظهر هنا.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600)))
+                : ListView(padding: const EdgeInsets.all(16), children: [
+                    DropdownButtonFormField<String>(
+                      value: _exam!['id'] as String,
+                      decoration: const InputDecoration(labelText: 'اختار الامتحان'),
+                      items: _exams.map<DropdownMenuItem<String>>((e) => DropdownMenuItem(value: e['id'] as String, child: Text(e['title'] ?? ''))).toList(),
+                      onChanged: (v) { setState(() => _exam = _exams.firstWhere((e) => e['id'] == v)); _load(); },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      _count('كل الطلبة', calcRows.length, kNavy),
+                      _count('لسه مدخلوش', counts['unused']!, Colors.grey),
+                      _count('بيحلوا', counts['in_progress']!, kGold),
+                      _count('سلّموا', counts['submitted']!, kTeal),
+                    ]),
+                    const SizedBox(height: 10),
+                    TextField(
+                      decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'دور باسم الطالب'),
+                      onChanged: (v) => setState(() => _query = v.trim()),
+                    ),
+                    const SizedBox(height: 8),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(children: [
+                        _fchip('all', 'كل الحالات'), _fchip('unused', 'لسه مدخلوش'), _fchip('in_progress', 'دخلوا ولم يسلّموا'), _fchip('submitted', 'سلّموا'),
+                      ]),
+                    ),
+                    const SizedBox(height: 8),
+                    if (filtered.isEmpty)
+                      Padding(padding: const EdgeInsets.all(24), child: Text('مفيش طلبة مطابقين.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600))),
+                    ...filtered.map((r) {
+                      final c = r['_c'] as Map<String, dynamic>;
+                      final st = c['status'];
+                      final chipColor = st == 'submitted' ? kTeal : st == 'in_progress' ? kGold : Colors.grey;
+                      final chipText = st == 'submitted' ? 'سلّم الامتحان' : st == 'in_progress' ? 'دخل ولم يسلّم' : 'لسه مدخلش';
+                      String detail = '';
+                      if (st == 'in_progress' && c['elapsed'] != null) detail = 'بيحل من ${_fmt(c['elapsed'])} دقيقة${c['overdue'] == true ? ' • عدّى الوقت' : ''}';
+                      if (st == 'submitted' && c['sub'] != null) {
+                        detail = 'الدرجة: ${c['score']}/${c['total']} • الوقت: ${_fmt((c['sub']['time_sec'] as num).toInt())}${c['pending'] == true ? ' • مبدئية (مقالي مستني)' : ''}';
+                      }
+                      return Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: chipColor.withOpacity(0.15),
+                            child: Icon(st == 'submitted' ? Icons.check : st == 'in_progress' ? Icons.edit_outlined : Icons.hourglass_empty, color: chipColor, size: 20),
+                          ),
+                          title: Text(r['student_name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          subtitle: detail.isEmpty ? null : Text(detail, style: const TextStyle(fontSize: 12.5)),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: chipColor.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+                            child: Text(chipText, style: TextStyle(fontSize: 11.5, color: chipColor, fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 10),
+                    Text('«دخل ولم يسلّم» معناها إنه بدأ جلسة، مش بالضرورة فاتح دلوقتي. لو في أسئلة مقالية، الدرجة مبدئية لحد تصحيحها.',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  ]),
+      ),
+    );
+  }
+
+  Widget _count(String label, int v, Color color) => Expanded(
+        child: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(children: [
+              Text('$v', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: color)),
+              Text(label, style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600), textAlign: TextAlign.center),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _fchip(String v, String label) => Padding(
+        padding: const EdgeInsets.only(left: 6),
+        child: ChoiceChip(label: Text(label), selected: _filter == v, onSelected: (_) => setState(() => _filter = v)),
+      );
+}
+
+===== FILE: lib/teacher/videos.dart =====
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../src/core.dart';
+
+class VideosTab extends StatefulWidget {
+  const VideosTab({super.key});
+  @override
+  State<VideosTab> createState() => _VideosTabState();
+}
+
+class _VideosTabState extends State<VideosTab> {
+  List _videos = [];
+  List _subs = [];
+  bool _loading = true;
+  String _stageFilter = '';
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final uid = sb.auth.currentUser!.id;
+      final vs = await sb.from('videos').select().eq('teacher_id', uid).order('created_at', ascending: false);
+      final ss = await sb.from('video_students').select().eq('teacher_id', uid).order('created_at', ascending: false);
+      if (mounted) setState(() { _videos = vs; _subs = ss; _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('فيديوهات الشرح')),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(padding: const EdgeInsets.all(16), children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const Text('أضف فيديو', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Text('حط لينك الفيديو (يوتيوب "غير مدرج" أو جوجل درايف). بيظهر للطلبة المشتركين بس.',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(onPressed: _addVideo, icon: const Icon(Icons.video_library), label: const Text('أضف الفيديو')),
+                    ]),
+                  ),
+                ),
+                SizedBox(
+                  height: 46,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: const Text('كل المراحل'), selected: _stageFilter.isEmpty, onSelected: (_) => setState(() => _stageFilter = ''))),
+                      ...kStages.map((st) => Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: Text(st), selected: _stageFilter == st, onSelected: (_) => setState(() => _stageFilter = st)))),
+                    ],
+                  ),
+                ),
+                ..._videos.where((v) => _stageFilter.isEmpty || (v['grade'] ?? '') == _stageFilter).map((v) => Card(
+                      child: ListTile(
+                        leading: Icon(Icons.play_circle, color: v['active'] == true ? kTeal : Colors.grey, size: 30),
+                        title: Text(v['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text('${(v['grade'] ?? '').toString().isNotEmpty ? '${v['grade']} • ' : ''}${v['url'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            icon: Icon(v['active'] == true ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+                            tooltip: v['active'] == true ? 'إخفاء' : 'إظهار',
+                            onPressed: () async {
+                              await sb.from('videos').update({'active': v['active'] != true}).eq('id', v['id']);
+                              _load();
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                            onPressed: () async {
+                              final yes = await showDialog<bool>(context: context, builder: (ctx) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(title: const Text('حذف الفيديو ده؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لا')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('احذف'))])));
+                              if (yes != true) return;
+                              try { await sb.from('videos').delete().eq('id', v['id']); } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+                              _load();
+                            },
+                          ),
+                        ]),
+                      ),
+                    )),
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const Text('الطلبة المشتركين', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Text('اعمل يوزر وباسورد لكل طالب دفع الاشتراك (الدفع فودافون كاش أو إنستاباي خارج المنصة). تقدر توقف اشتراك أي طالب في أي وقت.',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(onPressed: _addSub, icon: const Icon(Icons.person_add), label: const Text('أضف المشترك')),
+                    ]),
+                  ),
+                ),
+                ..._subs.map((s) => Card(
+                      child: ListTile(
+                        leading: Icon(s['active'] == true ? Icons.check_circle : Icons.pause_circle,
+                            color: s['active'] == true ? kTeal : Colors.grey),
+                        title: Text(s['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text('اليوزر: ${s['username']}'),
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (v) => _subAction(v, s),
+                          itemBuilder: (_) => [
+                            PopupMenuItem(value: 'toggle', child: Text(s['active'] == true ? 'إيقاف الاشتراك' : 'تفعيل الاشتراك')),
+                            const PopupMenuItem(value: 'reset', child: Text('باسورد جديد')),
+                            const PopupMenuItem(value: 'delete', child: Text('حذف', style: TextStyle(color: Colors.red))),
+                          ],
+                        ),
+                      ),
+                    )),
+              ]),
+      ),
+    );
+  }
+
+  Future<void> _addVideo() async {
+    final title = TextEditingController();
+    final url = TextEditingController();
+    String stage = '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('فيديو جديد'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: title, decoration: const InputDecoration(labelText: 'عنوان الفيديو *')),
+            const SizedBox(height: 10),
+            TextField(controller: url, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                decoration: const InputDecoration(labelText: 'لينك الفيديو *', hintText: 'https://')),
+            const SizedBox(height: 10),
+            StatefulBuilder(builder: (ctx2, setS) => DropdownButtonFormField<String>(
+              value: stage.isEmpty ? null : stage,
+              decoration: const InputDecoration(labelText: 'المرحلة / الصف'),
+              items: kStages.map((st) => DropdownMenuItem(value: st, child: Text(st, style: const TextStyle(fontSize: 13)))).toList(),
+              onChanged: (v) => setS(() => stage = v ?? ''),
+            )),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إضافة')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || title.text.trim().isEmpty || url.text.trim().isEmpty) return;
+    final u = url.text.trim();
+    if (ytId(u).isEmpty && driveId(u).isEmpty) {
+      if (mounted) toast(context, 'اللينك لازم يكون يوتيوب أو جوجل درايف', err: true);
+      return;
+    }
+    try {
+      await sb.from('videos').insert({'teacher_id': sb.auth.currentUser!.id, 'title': title.text.trim(), 'url': u, 'grade': stage});
+      _load();
+      if (mounted) toast(context, 'الفيديو اتضاف');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Future<void> _addSub() async {
+    final name = TextEditingController();
+    final user = TextEditingController();
+    final pass = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('مشترك جديد'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم الطالب *')),
+            const SizedBox(height: 10),
+            TextField(controller: user, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                decoration: const InputDecoration(labelText: 'اسم المستخدم (إنجليزي من غير مسافات) *')),
+            const SizedBox(height: 10),
+            PwField(controller: pass, label: 'كلمة السر *'),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إضافة')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final r = await sb.rpc('create_video_student', params: {
+        'p_name': name.text.trim(), 'p_username': user.text.trim(), 'p_password': pass.text,
+      });
+      if (r['ok'] != true) {
+        final m = {
+          'bad_username': 'اسم المستخدم لازم يكون 3 حروف إنجليزي أو أرقام على الأقل من غير مسافات.',
+          'bad_password': 'كلمة السر لازم تكون 8 حروف على الأقل.',
+          'taken': 'اسم المستخدم ده متاخد، جرب اسم تاني.',
+          'auth': 'سجّل دخول من الأول.',
+        };
+        if (mounted) toast(context, m[r['error']] ?? 'حصلت مشكلة، جرب تاني', err: true);
+        return;
+      }
+      _load();
+      if (mounted) toast(context, 'المشترك اتضاف');
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+
+  Future<void> _subAction(String action, Map s) async {
+    try {
+      if (action == 'toggle') {
+        await sb.from('video_students').update({'active': s['active'] != true}).eq('id', s['id']);
+      } else if (action == 'delete') {
+        final yes = await showDialog<bool>(context: context, builder: (ctx) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(title: const Text('حذف المشترك ده؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لا')), TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('احذف'))])));
+        if (yes != true) return;
+        await sb.from('video_students').delete().eq('id', s['id']);
+      } else if (action == 'reset') {
+        final pass = TextEditingController();
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('باسورد جديد'),
+              content: PwField(controller: pass, label: 'كلمة السر الجديدة'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حفظ')),
+              ],
+            ),
+          ),
+        );
+        if (ok != true || pass.text.length < 8) { if (mounted) toast(context, 'كلمة السر لازم تكون 8 حروف على الأقل.', err: true); return; }
+        final r = await sb.rpc('reset_video_student_password', params: {'p_student': s['id'], 'p_password': pass.text});
+        if (r['ok'] != true) { if (mounted) toast(context, 'حصلت مشكلة', err: true); return; }
+        if (mounted) toast(context, 'الباسورد اتغير');
+      }
+      _load();
+    } catch (_) { if (mounted) toast(context, 'حصلت مشكلة', err: true); }
+  }
+}
