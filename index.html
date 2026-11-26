@@ -344,8 +344,8 @@ function saveAnswer(qid,value){
   saveStatus('جاري حفظ إجاباتك…');
   const pending=previous.catch(()=>{}).then(async()=>{
     const {data,error}=await sb.rpc('save_answer',{p_session:sessionId,p_question:qid,p_answer:value});
-    if(data && data.ok===false && data.error==='time_expired'){studentState.expired=true;failedAnswers.delete(qid);return;}
-    if(data && data.ok===false && data.error==='bad_question'){failedAnswers.delete(qid);return;}
+    if(data && (data.rejected==='time_expired' || (data.ok===false && data.error==='time_expired'))){studentState.expired=true;failedAnswers.delete(qid);return;}
+    if(data && (data.rejected==='bad_question' || (data.ok===false && data.error==='bad_question'))){failedAnswers.delete(qid);return;}
     if(error || (data && data.ok===false)) throw new Error('save failed');
     failedAnswers.delete(qid);
   }).catch(()=>{failedAnswers.set(qid,value);}).finally(()=>{
