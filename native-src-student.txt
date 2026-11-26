@@ -1,0 +1,1134 @@
+
+===== FILE: lib/main_student.dart =====
+import 'package:flutter/material.dart';
+import 'src/core.dart';
+import 'student/landing.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initSupabase();
+  runApp(const StudentApp());
+}
+
+class StudentApp extends StatefulWidget {
+  const StudentApp({super.key});
+  @override
+  State<StudentApp> createState() => _StudentAppState();
+}
+
+class _StudentAppState extends State<StudentApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate('student'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'المنصة للطالب',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: navKey,
+      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child ?? const SizedBox()),
+      theme: buildTheme(),
+      home: const StudentLanding(),
+    );
+  }
+}
+
+===== FILE: lib/student/exam.dart =====
+import 'dart:math';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class CodeEntryPage extends StatefulWidget {
+  const CodeEntryPage({super.key});
+  @override
+  State<CodeEntryPage> createState() => _CodeEntryPageState();
+}
+
+class _CodeEntryPageState extends State<CodeEntryPage> {
+  final _code = TextEditingController();
+  bool _busy = false;
+
+  Future<void> _redeem() async {
+    final token = _code.text.trim().toUpperCase();
+    if (token.isEmpty) { toast(context, 'اكتب الكود الأول', err: true); return; }
+    setState(() => _busy = true);
+    try {
+      final r = await sb.rpc('redeem_code', params: {'p_token': token});
+      if (!mounted) return;
+      if (r['ok'] != true) {
+        final m = {
+          'invalid_code': 'الكود ده مش مظبوط. اتأكد منه وكلم مدرسك.',
+          'not_published': 'الامتحان ده لسه مش متاح.',
+          'not_yet': 'الامتحان لسه ما بدأش. استنى المعاد اللي قال عليه مدرسك.',
+          'expired': 'وقت الامتحان ده خلص. كلم مدرسك.',
+          'already_completed': 'الكود ده اتستخدم وخلاص. كلم مدرسك لو في غلط.',
+        };
+        toast(context, m[r['error']] ?? 'حصلت مشكلة، جرب تاني', err: true);
+        setState(() => _busy = false);
+        return;
+      }
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ExamIntroPage(data: r)));
+    } catch (_) {
+      if (mounted) { toast(context, 'حصلت مشكلة في الاتصال، جرب تاني', err: true); setState(() => _busy = false); }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('دخول الامتحان')),
+        body: ListView(padding: const EdgeInsets.all(20), children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Text('بوابة الامتحانات', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+                const SizedBox(height: 6),
+                Text('اكتب الكود اللي المدرس بعتهولك', style: TextStyle(color: Colors.grey.shade600), textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _code,
+                  textCapitalization: TextCapitalization.characters,
+                  textDirection: TextDirection.ltr, textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 20, letterSpacing: 3, fontWeight: FontWeight.w800),
+                  decoration: const InputDecoration(hintText: 'XXXX-XXXX'),
+                  onSubmitted: (_) => _redeem(),
+                ),
+                const SizedBox(height: 16),
+                BusyBtn(label: 'دخول', busy: _busy, onTap: _redeem, icon: Icons.login),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class ExamIntroPage extends StatelessWidget {
+  final Map data;
+  const ExamIntroPage({super.key, required this.data});
+  @override
+  Widget build(BuildContext context) {
+    final exam = data['exam'] as Map;
+    final qs = (data['questions'] as List?) ?? [];
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('تفاصيل الامتحان')),
+        body: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(children: [
+                  Text(exam['title'] ?? '', style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900), textAlign: TextAlign.center),
+                  const SizedBox(height: 6),
+                  Text('${exam['subject'] ?? ''} ${exam['grade'] ?? ''}', style: TextStyle(color: Colors.grey.shade600)),
+                  const Divider(height: 28),
+                  _row('الطالب', data['student'] ?? ''),
+                  _row('عدد الأسئلة', '${qs.length}'),
+                  _row('المدة', fmtDur(exam['duration_min'] ?? 15)),
+                  _row('نسبة النجاح', '${exam['pass_pct'] ?? 50}%'),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text('بالتوفيق يا بطل! خد نفسك وركّز.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => TakeExamPage(data: data))),
+              icon: const Icon(Icons.play_arrow), label: const Text('ابدأ الامتحان'),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text(k, style: TextStyle(color: Colors.grey.shade600)),
+          Text(v, style: const TextStyle(fontWeight: FontWeight.w700)),
+        ]),
+      );
+}
+
+class TakeExamPage extends StatefulWidget {
+  final Map data;
+  const TakeExamPage({super.key, required this.data});
+  @override
+  State<TakeExamPage> createState() => _TakeExamPageState();
+}
+
+class _TakeExamPageState extends State<TakeExamPage> with WidgetsBindingObserver {
+  late List _questions;
+  late Map _answers; // question_id -> dynamic (int index for mcq/tf, string for sa/essay)
+  late DateTime _startedAt;
+  late int _durationSec;
+  Timer? _timer;
+  int _remaining = 0;
+  int _index = 0;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final exam = widget.data['exam'] as Map;
+    _questions = List.from(widget.data['questions'] ?? []);
+    if (exam['shuffle_q'] == true) _questions.shuffle(Random());
+    // choices carry their original index so shuffled display still grades right
+    for (final q in _questions) {
+      if (q['type'] == 'mcq' && q['choices'] is List) {
+        final mapped = [for (var i = 0; i < (q['choices'] as List).length; i++) {'t': q['choices'][i], 'i': i}];
+        if (exam['shuffle_c'] == true) mapped.shuffle(Random());
+        q['choices'] = mapped;
+      } else if (q['type'] == 'tf') {
+        q['choices'] = [
+          {'t': (q['choices'] as List)[0], 'i': 0},
+          {'t': (q['choices'] as List)[1], 'i': 1},
+        ];
+      }
+    }
+    _answers = Map.from(widget.data['saved'] ?? {});
+    _startedAt = DateTime.tryParse(widget.data['exam']['started_at'] ?? '') ?? DateTime.now();
+    _durationSec = (widget.data['exam']['duration_min'] ?? 15) * 60;
+    final elapsed = DateTime.now().difference(_startedAt.toLocal()).inSeconds;
+    _remaining = (_durationSec - elapsed).clamp(0, _durationSec);
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (_remaining <= 1) { t.cancel(); _submit(auto: true); return; }
+      if (mounted) setState(() => _remaining--);
+    });
+  }
+
+  final Map<dynamic, TextEditingController> _ctrls = {};
+  final Map<dynamic, Timer> _debounce = {};
+  Timer? _retry;
+
+  @override
+  void dispose() {
+    _timer?.cancel(); _retry?.cancel();
+    for (final t in _debounce.values) { t.cancel(); }
+    for (final c in _ctrls.values) { c.dispose(); }
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _flushText() {
+    final pending = _debounce.keys.toList();
+    for (final k in pending) { _debounce.remove(k)?.cancel(); _save(k, _answers[k]); }
+  }
+
+  String _saveNote = '';
+  bool _expired = false;
+
+  void _save(dynamic qid, dynamic answer) {
+    _answers[qid] = answer;
+    if (mounted) setState(() => _saveNote = 'جاري الحفظ…');
+    sb.rpc('save_answer', params: {'p_session': widget.data['session_id'], 'p_question': qid, 'p_answer': answer}).then((r) {
+      if (!mounted) return;
+      if (r is Map && (r['rejected'] == 'time_expired' || r['error'] == 'time_expired')) {
+        // server says time is over: stop editing and hand in what was saved
+        if (!_expired) { _expired = true; _submit(auto: true); }
+        return;
+      }
+      setState(() => _saveNote = (r is Map && r['ok'] == false) ? 'مشكلة في الحفظ، اتأكد من النت' : '✓ اتحفظت');
+    }).catchError((_) { if (mounted) setState(() => _saveNote = 'مشكلة في الحفظ، اتأكد من النت'); });
+  }
+
+  Future<void> _submit({bool auto = false}) async {
+    if (_submitting) return;
+    _flushText();
+    if (!auto) {
+      final yes = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('تسليم الامتحان؟'),
+            content: const Text('متأكد إنك عايز تسلّم؟ مش هتقدر ترجع بعدها.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('لسه')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('سلّم')),
+            ],
+          ),
+        ),
+      );
+      if (yes != true) return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final timeSec = DateTime.now().difference(_startedAt.toLocal()).inSeconds;
+      final r = await sb.rpc('submit_exam', params: {
+        'p_session': widget.data['session_id'], 'p_time_sec': timeSec, 'p_auto': auto,
+      });
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ExamResultPage(result: r, student: widget.data['student'] ?? '')));
+    } catch (_) {
+      if (mounted) {
+        setState(() { _submitting = false; _saveNote = auto ? 'الوقت خلص. مفيش نت، هنحاول نسلّم تاني لحد ما ينجح…' : ''; });
+        if (auto) { _retry?.cancel(); _retry = Timer(const Duration(seconds: 8), () { if (mounted) _submit(auto: true); }); }
+        else { toast(context, 'حصلت مشكلة في التسليم، جرب تاني', err: true); }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _questions[_index];
+    final mins = (_remaining ~/ 60).toString().padLeft(2, '0');
+    final secs = (_remaining % 60).toString().padLeft(2, '0');
+    final low = _remaining < 60;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          final leave = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                title: const Text('تخرج من الامتحان؟'),
+                content: const Text('الوقت هيفضل شغال، وإجاباتك اتحفظت. تقدر ترجع بنفس الكود طول ما الوقت لسه موجود.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('كمّل امتحان')),
+                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('اخرج')),
+                ],
+              ),
+            ),
+          );
+          if (leave == true && context.mounted) { _flushText(); Navigator.of(context).popUntil((r) => r.isFirst); }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            title: Text('سؤال ${_index + 1} من ${_questions.length}'),
+            actions: [
+              Center(child: Container(
+                margin: const EdgeInsetsDirectional.only(end: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: low ? kTeal : (_remaining < 300 ? kGold : Colors.white),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: kNavy, width: 2),
+                ),
+                child: Text('$mins:$secs', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: low ? Colors.white : kNavy)),
+              )),
+            ],
+          ),
+          body: Column(children: [
+            LinearProgressIndicator(minHeight: 7, value: (_index + 1) / _questions.length, color: kTeal, backgroundColor: const Color(0xFFEADFC9)),
+            Expanded(
+              child: ListView(padding: const EdgeInsets.all(20), children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Text(q['text'] ?? '', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 4),
+                      Text('${q['points']} درجة', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                      const SizedBox(height: 16),
+                      _answerWidget(q),
+                    ]),
+                  ),
+                ),
+              ]),
+            ),
+            if (_saveNote.isNotEmpty)
+              Padding(padding: const EdgeInsets.only(top: 6), child: Text(_saveNote, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _saveNote.startsWith('✓') ? const Color(0xFF2F8F5B) : (_saveNote.startsWith('مشكلة') ? Colors.red.shade700 : Colors.grey.shade600)))),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: [
+                if (_index > 0)
+                  Expanded(child: OutlinedButton(onPressed: () => setState(() => _index--), child: const Text('السابق'))),
+                if (_index > 0) const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: _index < _questions.length - 1
+                      ? ElevatedButton(onPressed: () => setState(() => _index++), child: const Text('اللي بعده'))
+                      : BusyBtn(label: 'تسليم الامتحان', busy: _submitting, onTap: () => _submit(), icon: Icons.check),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _answerWidget(Map q) {
+    final qid = q['id'];
+    final type = q['type'];
+    if (type == 'mcq' || type == 'tf') {
+      final choices = (q['choices'] as List?) ?? [];
+      final sel = _answers[qid];
+      return Column(
+        children: List.generate(choices.length, (row) {
+          final origIdx = choices[row]['i'];
+          final isSel = sel == origIdx || (sel is String && sel == '$origIdx');
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => setState(() => _save(qid, origIdx)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isSel ? kMint : Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: kNavy, width: 2),
+                  boxShadow: isSel ? const [BoxShadow(color: kNavy, offset: Offset(3, 3))] : null,
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 32, height: 32, alignment: Alignment.center,
+                    decoration: BoxDecoration(color: isSel ? kNavy : kBg, borderRadius: BorderRadius.circular(10), border: Border.all(color: kNavy, width: 2)),
+                    child: Text(row < 4 ? 'أبجد'[row] : '${row + 1}', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: isSel ? Colors.white : kNavy)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('${choices[row]['t']}', style: const TextStyle(color: kNavy, fontWeight: FontWeight.w700, fontSize: 15))),
+                ]),
+              ),
+            ),
+          );
+        }),
+      );
+    }
+    // sa / essay: free text
+    return TextField(
+      maxLines: type == 'essay' ? 6 : 2,
+      controller: _ctrls.putIfAbsent(qid, () => TextEditingController(text: _answers[qid]?.toString() ?? '')),
+      decoration: InputDecoration(hintText: type == 'essay' ? 'اكتب إجابتك بالتفصيل...' : 'اكتب إجابتك...'),
+      onChanged: (v) {
+        _answers[qid] = v;
+        _debounce[qid]?.cancel();
+        _debounce[qid] = Timer(const Duration(milliseconds: 700), () { _debounce.remove(qid); _save(qid, v); });
+      },
+    );
+  }
+}
+
+class ExamResultPage extends StatelessWidget {
+  final Map result;
+  final String student;
+  const ExamResultPage({super.key, required this.result, required this.student});
+  @override
+  Widget build(BuildContext context) {
+    final show = result['show'] == true;
+    final score = result['score'], total = result['total'];
+    final p = (total is num && total > 0 && score is num) ? (score / total * 100).round() : 0;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              FadeSlideIn(
+                child: Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: const BoxDecoration(color: kNavy, shape: BoxShape.circle),
+                  child: const Icon(Icons.emoji_events, color: kGold, size: 54),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text('برافو يا $student!', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              Text('امتحانك اتسلّم بنجاح', style: TextStyle(color: Colors.grey.shade600)),
+              const SizedBox(height: 16),
+              if (show && result['ok'] == true) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 18),
+                    child: Column(children: [
+                      Text('$score / $total', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: kNavy)),
+                      Text('$p%', style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
+                      if (result['essay_pending'] == true)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('في أسئلة مقالية هتتصحح من المدرس', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                        ),
+                    ]),
+                  ),
+                ),
+              ] else
+                Text('النتيجة هتتقاللك من مدرسك', style: TextStyle(color: Colors.grey.shade600)),
+              const SizedBox(height: 24),
+              ElevatedButton(onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst), child: const Text('تمام')),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/student/faq.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+
+class FaqBotPage extends StatefulWidget {
+  const FaqBotPage({super.key});
+  @override
+  State<FaqBotPage> createState() => _FaqBotPageState();
+}
+
+class _Msg {
+  final String text;
+  final bool fromUser;
+  const _Msg(this.text, this.fromUser);
+}
+
+class _FaqBotPageState extends State<FaqBotPage> {
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+  final List<_Msg> _msgs = [];
+  List _faqs = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await sb.rpc('faq_list');
+      if (mounted) {
+        setState(() { _faqs = r is List ? r : []; _loading = false; });
+        _msgs.add(_Msg(_faqs.isEmpty
+            ? 'أهلًا بيك! 👋 أنا بوت الأسئلة المتكررة. لسه مفيش أسئلة اتعلمتها، أول ما المدرس يضيف أسئلة وأجوبة هقدر أرد عليك.'
+            : 'أهلًا بيك! 👋 اسألني أي سؤال من الأسئلة المتكررة وهجاوبك على طول.', false));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _norm(String s) => s
+      .replaceAll(RegExp(r'[أإآ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي')
+      .replaceAll(RegExp(r'[^\u0621-\u064Aa-zA-Z0-9\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim()
+      .toLowerCase();
+
+  void _ask() {
+    final q = _input.text.trim();
+    if (q.isEmpty) return;
+    _input.clear();
+    setState(() => _msgs.add(_Msg(q, true)));
+    final nq = _norm(q);
+    final qWords = nq.split(' ').where((w) => w.length > 2).toSet();
+    Map? best;
+    var bestScore = 0;
+    for (final f in _faqs) {
+      final fq = _norm(f['question'] ?? '');
+      final fWords = fq.split(' ').where((w) => w.length > 2).toSet();
+      final common = qWords.intersection(fWords).length;
+      final contains = fq.contains(nq) || nq.contains(fq);
+      final score = common * 2 + (contains ? 5 : 0);
+      if (score > bestScore) { bestScore = score; best = f; }
+    }
+    final answer = (best != null && bestScore >= 4)
+        ? (best['answer'] ?? '').toString()
+        : (_faqs.isEmpty
+            ? 'لسه مفيش إجابات متسجلة. اسأل المدرس مباشرة دلوقتي.'
+            : 'مش لاقي إجابة للسؤال ده عندي. جرب تسأل بطريقة تانية، أو اسأل المدرس مباشرة.');
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() => _msgs.add(_Msg(answer, false)));
+        _scroll.animateTo(_scroll.position.maxScrollExtent + 120, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.smart_toy_outlined, size: 22), SizedBox(width: 6), Text('بوت الأسئلة')])),
+        body: Column(children: [
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : ListView.builder(
+                    controller: _scroll,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _msgs.length,
+                    itemBuilder: (_, i) {
+                      final m = _msgs[i];
+                      return Align(
+                        alignment: m.fromUser ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.8),
+                          decoration: BoxDecoration(
+                            color: m.fromUser ? kNavy : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: m.fromUser ? null : Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Text(m.text, style: TextStyle(color: m.fromUser ? Colors.white : Colors.grey.shade900, height: 1.5)),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+              child: Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _input,
+                    onSubmitted: (_) => _ask(),
+                    decoration: const InputDecoration(hintText: 'اكتب سؤالك هنا…', isDense: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(backgroundColor: kNavy, child: IconButton(icon: const Icon(Icons.send, color: Colors.white, size: 20), onPressed: _ask)),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+===== FILE: lib/student/landing.dart =====
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../src/core.dart';
+import 'exam.dart';
+import 'videos.dart';
+import 'stages.dart';
+import 'faq.dart';
+
+class StudentLanding extends StatelessWidget {
+  const StudentLanding({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        body: SingleChildScrollView(
+          child: Column(children: [
+            FadeSlideIn(child: const BrandHeader(subtitle: 'خد نفس، ركّز، وحلّ على مهلك. كل سؤال خطوة لقدّام.')),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(children: [
+                FadeSlideIn(
+                  delayMs: 200,
+                  child: _bigCard(
+                    context,
+                    icon: Icons.key, color: kNavy,
+                    title: 'بوابة الامتحانات',
+                    subtitle: 'اكتب الكود اللي المدرس بعتهولك عشان تدخل امتحانك',
+                    btn: 'دخول الامتحان',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CodeEntryPage())),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FadeSlideIn(
+                  delayMs: 350,
+                  child: _bigCard(
+                    context,
+                    icon: Icons.play_circle, color: kTeal,
+                    title: 'فيديوهات الشرح',
+                    subtitle: 'لو اشتركت في فيديوهات الشرح، ادخل باليوزر والباسورد اللي المدرس دهوملك',
+                    btn: 'دخول الفيديوهات',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VideoLoginPage())),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FadeSlideIn(
+                  delayMs: 420,
+                  child: _bigCard(
+                    context,
+                    icon: Icons.grid_view_rounded, color: kGold,
+                    title: 'أقسام المراحل',
+                    subtitle: 'امتحانات وفيديوهات كل مرحلة لوحدها، من رابعة ابتدائي لحد تالتة إعدادي',
+                    btn: 'اختار مرحلتك',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StagesPage())),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FadeSlideIn(
+                  delayMs: 460,
+                  child: _bigCard(
+                    context,
+                    icon: Icons.smart_toy_outlined, color: kNavy2,
+                    title: 'بوت الأسئلة المتكررة',
+                    subtitle: 'عندك سؤال؟ اسأل البوت وهيرد عليك من الأسئلة المسجلة',
+                    btn: 'اسأل البوت',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FaqBotPage())),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FadeSlideIn(
+                  delayMs: 500,
+                  child: Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.payments_outlined, color: kGold),
+                      title: const Text('الاشتراك في فيديوهات الشرح', style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('حوّل قيمة الاشتراك فودافون كاش وخد اليوزر والباسورد من مدرسك'),
+                      onTap: () => showVodafonePaySheet(context),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.info_outline, color: kTeal),
+                    title: const Text('عن المنصة', style: TextStyle(fontWeight: FontWeight.w700)),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutPage())),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _bigCard(BuildContext context, {required IconData icon, required Color color, required String title, required String subtitle, required String btn, required VoidCallback onTap}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            CircleAvatar(backgroundColor: color.withOpacity(0.12), child: Icon(icon, color: color)),
+            const SizedBox(width: 12),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 8),
+          Text(subtitle, style: TextStyle(color: Colors.grey.shade600, fontSize: 13.5)),
+          const SizedBox(height: 14),
+          ElevatedButton(onPressed: onTap, child: Text(btn)),
+        ]),
+      ),
+    );
+  }
+}
+
+void showVodafonePaySheet(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    builder: (ctx) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('دفع الاشتراك - فودافون كاش', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text('حوّل قيمة الاشتراك على الرقم ده، وبعدها مدرسك هيديك اليوزر والباسورد:',
+              style: TextStyle(color: Colors.grey.shade600), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(14)),
+            child: const Text(kVodafoneCashNumber, textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () { Clipboard.setData(const ClipboardData(text: kVodafoneCashNumber)); toast(ctx, 'الرقم اتنسخ'); },
+            icon: const Icon(Icons.copy), label: const Text('نسخ الرقم'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => launchUrl(Uri.parse('tel:*9*7*$kVodafoneCashNumber%23')),
+            icon: const Icon(Icons.dialpad), label: const Text('تحويل من الاتصال (*9#)'),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    ),
+  );
+}
+
+===== FILE: lib/student/stages.dart =====
+import 'package:flutter/material.dart';
+import '../src/core.dart';
+import 'exam.dart';
+import 'videos.dart';
+
+class StagesPage extends StatelessWidget {
+  const StagesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('المراحل الدراسية')),
+        body: GridView.count(
+          crossAxisCount: 2,
+          padding: const EdgeInsets.all(16),
+          mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.15,
+          children: kStages.asMap().entries.map((e) {
+            final icons = [Icons.looks_4, Icons.looks_5, Icons.looks_6, Icons.looks_one, Icons.looks_two, Icons.looks_3];
+            return Card(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => StagePage(stage: e.value))),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  CircleAvatar(backgroundColor: kNavy.withOpacity(0.08), radius: 26, child: Icon(icons[e.key], color: kNavy)),
+                  const SizedBox(height: 10),
+                  Text(e.value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5), textAlign: TextAlign.center),
+                ]),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class StagePage extends StatefulWidget {
+  final String stage;
+  const StagePage({super.key, required this.stage});
+  @override
+  State<StagePage> createState() => _StagePageState();
+}
+
+class _StagePageState extends State<StagePage> {
+  List _exams = [];
+  bool _loading = true;
+  int _tab = 0;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final r = await sb.rpc('public_stage_exams', params: {'p_grade': widget.stage});
+      if (mounted) setState(() { _exams = r is List ? r : []; _loading = false; });
+    } catch (_) { if (mounted) setState(() { _exams = []; _loading = false; }); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: Text(widget.stage, style: const TextStyle(fontSize: 17))),
+        body: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(children: [
+              _tabBtn(0, 'الامتحانات', Icons.assignment_outlined),
+              const SizedBox(width: 8),
+              _tabBtn(1, 'الفيديوهات', Icons.play_circle_outline),
+            ]),
+          ),
+          Expanded(child: _tab == 0 ? _examsTab() : _videosTab()),
+        ]),
+      ),
+    );
+  }
+
+  Widget _tabBtn(int i, String label, IconData icon) {
+    final sel = _tab == i;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _tab = i),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: sel ? kNavy : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: sel ? kNavy : Colors.grey.shade300),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 18, color: sel ? Colors.white : kNavy),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(color: sel ? Colors.white : kNavy, fontWeight: FontWeight.w700)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _examsTab() {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_exams.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Text('القسم ده لسه مقفول، أول ما تتضاف امتحانات للمرحلة دي هتظهر هنا لوحدها.',
+            textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600, height: 1.6)),
+      ));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _exams.length,
+      itemBuilder: (_, i) {
+        final e = _exams[i];
+        return Card(
+          child: ListTile(
+            leading: CircleAvatar(backgroundColor: kTeal.withOpacity(0.15), child: const Icon(Icons.assignment, color: kNavy)),
+            title: Text(e['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: Text('${e['subject'] ?? ''} • ${e['duration_min']} دقيقة${(e['teacher_name'] ?? '').toString().isNotEmpty ? ' • ${e['teacher_name']}' : ''}'),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CodeEntryPage())),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _videosTab() {
+    return Center(child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('فيديوهات الشرح للمشتركين بس.', style: TextStyle(color: Colors.grey.shade600)),
+        const SizedBox(height: 12),
+        ElevatedButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoLoginPage(stage: widget.stage))),
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('دخول المشتركين'),
+        ),
+      ]),
+    ));
+  }
+}
+
+===== FILE: lib/student/videos.dart =====
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import '../src/core.dart';
+import 'landing.dart' show showVodafonePaySheet;
+
+class VideoLoginPage extends StatefulWidget {
+  final String stage;
+  const VideoLoginPage({super.key, this.stage = ''});
+  @override
+  State<VideoLoginPage> createState() => _VideoLoginPageState();
+}
+
+class _VideoLoginPageState extends State<VideoLoginPage> {
+  final _user = TextEditingController();
+  final _pass = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _trySaved();
+  }
+
+  Future<void> _trySaved() async {
+    final prefs = await SharedPreferences.getInstance();
+    const ss = FlutterSecureStorage();
+    String? u, p;
+    try {
+      // one-time migration: move any old plaintext credentials into the keystore, then delete them
+      final ou = prefs.getString('vuser'), op = prefs.getString('vpass');
+      if (ou != null && op != null) {
+        await ss.write(key: 'vuser', value: ou);
+        await ss.write(key: 'vpass', value: op);
+      }
+      await prefs.remove('vuser'); await prefs.remove('vpass');
+      u = await ss.read(key: 'vuser'); p = await ss.read(key: 'vpass');
+    } catch (_) {
+      await prefs.remove('vuser'); await prefs.remove('vpass');
+    }
+    if (u != null && p != null && u.isNotEmpty) _login(u, p, quiet: true);
+  }
+
+  Future<void> _login(String u, String p, {bool quiet = false}) async {
+    if (u.trim().isEmpty || p.isEmpty) { if (!quiet) toast(context, 'اكتب اسم المستخدم وكلمة السر', err: true); return; }
+    setState(() => _busy = true);
+    try {
+      final r = await sb.rpc('video_login', params: {'p_username': u.trim(), 'p_password': p});
+      if (!mounted) return;
+      if (r['ok'] != true) {
+        final m = {'invalid': 'اليوزر أو الباسورد مش مظبوطين.', 'inactive': 'الاشتراك ده متوقف حاليًا. كلم مدرسك.', 'throttled': 'محاولات كتير غلط. استنى ١٠ دقايق وجرّب تاني.'};
+        if (!quiet) toast(context, m[r['error']] ?? 'حصلت مشكلة، جرب تاني', err: true);
+        setState(() => _busy = false);
+        return;
+      }
+      try {
+        const ss = FlutterSecureStorage();
+        await ss.write(key: 'vuser', value: u.trim());
+        await ss.write(key: 'vpass', value: p);
+      } catch (_) {}
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => VideoLibraryPage(name: r['name'] ?? '', videos: r['videos'] ?? [], stage: widget.stage)));
+    } catch (_) {
+      if (mounted && !quiet) { toast(context, 'حصلت مشكلة في الاتصال، جرب تاني', err: true); setState(() => _busy = false); }
+      else if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('فيديوهات الشرح')),
+        body: ListView(padding: const EdgeInsets.all(20), children: [
+          FadeSlideIn(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  const Text('دخول المشتركين', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+                  const SizedBox(height: 6),
+                  Text('ادخل باليوزر والباسورد اللي المدرس دهوملك', style: TextStyle(color: Colors.grey.shade600), textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _user, textDirection: TextDirection.ltr, textAlign: TextAlign.left,
+                    decoration: const InputDecoration(labelText: 'اسم المستخدم', prefixIcon: Icon(Icons.person_outline)),
+                  ),
+                  const SizedBox(height: 12),
+                  PwField(controller: _pass, action: TextInputAction.done, onSubmit: (_) => _login(_user.text, _pass.text)),
+                  const SizedBox(height: 16),
+                  BusyBtn(label: 'دخول للفيديوهات', busy: _busy, onTap: () => _login(_user.text, _pass.text), icon: Icons.play_arrow),
+                ]),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.payments_outlined, color: kGold),
+              title: const Text('لسه مش مشترك؟', style: TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: const Text('دوس هنا عشان تدفع فودافون كاش'),
+              onTap: () => showVodafonePaySheet(context),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class VideoLibraryPage extends StatefulWidget {
+  final String name;
+  final List videos;
+  final String stage;
+  const VideoLibraryPage({super.key, required this.name, required this.videos, this.stage = ''});
+  @override
+  State<VideoLibraryPage> createState() => _VideoLibraryPageState();
+}
+
+class _VideoLibraryPageState extends State<VideoLibraryPage> {
+  late String _filter = widget.stage;
+  @override
+  Widget build(BuildContext context) {
+    final videos = widget.videos.where((v) => _filter.isEmpty || (v['grade'] ?? '') == _filter).toList();
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('فيديوهات الشرح')),
+        body: Column(children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(colors: [kNavy, kNavy2], begin: Alignment.topRight, end: Alignment.bottomLeft),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+            ),
+            child: Column(children: [
+              Text('أهلًا ${widget.name}! 👋', style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 2),
+              Text('فيديوهات الشرح المتاحة ليك كلها هنا', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
+            ]),
+          ),
+          SizedBox(
+            height: 46,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: const Text('كل المراحل'), selected: _filter.isEmpty, onSelected: (_) => setState(() => _filter = ''))),
+                ...kStages.map((st) => Padding(padding: const EdgeInsets.only(left: 6), child: ChoiceChip(label: Text(st), selected: _filter == st, onSelected: (_) => setState(() => _filter = st)))),
+              ],
+            ),
+          ),
+          Expanded(
+            child: videos.isEmpty
+                ? Center(child: Text('مفيش فيديوهات متاحة ليك لسه.', style: TextStyle(color: Colors.grey.shade600)))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: videos.length,
+                    itemBuilder: (_, i) {
+                      final v = videos[i];
+                      final id = ytId(v['url'] ?? '');
+                      return Card(
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoPlayerPage(title: v['title'] ?? '', url: v['url'] ?? ''))),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            if (id.isNotEmpty)
+                              Image.network('https://i.ytimg.com/vi/$id/hqdefault.jpg', height: 160, fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(height: 160, color: kNavy2, child: const Icon(Icons.play_circle, color: Colors.white54, size: 48)))
+                            else
+                              Container(height: 120, color: kNavy2, child: const Icon(Icons.play_circle, color: Colors.white54, size: 48)),
+                            Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Row(children: [
+                                Expanded(child: Text(v['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+                                const Icon(Icons.play_circle_fill, color: kTeal),
+                              ]),
+                            ),
+                          ]),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class VideoPlayerPage extends StatelessWidget {
+  final String title;
+  final String url;
+  const VideoPlayerPage({super.key, required this.title, required this.url});
+  @override
+  Widget build(BuildContext context) {
+    final yt = ytId(url);
+    final dr = driveId(url);
+    final embed = yt.isNotEmpty
+        ? 'https://www.youtube-nocookie.com/embed/$yt?rel=0'
+        : 'https://drive.google.com/file/d/$dr/preview';
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse(embed));
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        body: WebViewWidget(controller: controller),
+      ),
+    );
+  }
+}
