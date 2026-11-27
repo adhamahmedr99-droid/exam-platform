@@ -707,20 +707,45 @@ let draft = null; // builder state
 function blankQ(){ return { text:'', type:'mcq', choices:['',''], correct:-1, acceptedText:'', points:1 }; }
 
 // Bulk import only changes the in-memory draft. Saving remains an explicit step.
-function parseExamImport(raw){
+function parseExamImport(raw, examNo){
   if(typeof raw !== 'string' || raw.length > 500000) throw new Error('الملف كبير جدًا. الحد الأقصى ٥٠٠ كيلوبايت.');
+  if(raw.charCodeAt(0)===0xFEFF) raw=raw.slice(1);
   let data; try { data=JSON.parse(raw); } catch { throw new Error('الملف مش JSON صالح. اختار ملف الامتحان الأصلي.'); }
-  const rows=Array.isArray(data)?data:data?.questions;
+  let title=typeof data?.title==='string'?data.title:'', subject=typeof data?.subject==='string'?data.subject:'';
+  let rows=Array.isArray(data)?data:data?.questions;
+  if(!Array.isArray(rows) && Array.isArray(data?.exams)){
+    const ex=data.exams;
+    if(!ex.length) throw new Error('الملف مفيهوش امتحانات.');
+    let pick=-1;
+    if(ex.length===1) pick=0;
+    else {
+      const n=parseInt(examNo,10);
+      const byNum=ex.findIndex(e=>e&&Number(e.exam_number)===n);
+      pick=byNum>=0?byNum:(n>=1&&n<=ex.length?n-1:-1);
+      if(pick<0) throw new Error('الملف فيه '+ex.length+' امتحان. اكتب رقم الامتحان (من ١ إلى '+ex.length+') في الخانة اللي تحت وجرب تاني: '+ex.map((e,i)=>(e&&e.exam_number||i+1)+'='+String(e&&e.title||'').slice(0,30)).join(' | '));
+    }
+    const e=ex[pick]||{};
+    rows=e.questions; if(typeof e.title==='string') title=e.title;
+  }
   if(!Array.isArray(rows)||!rows.length||rows.length>100) throw new Error('لازم الملف يحتوي من ١ إلى ١٠٠ سؤال.');
   const questions=rows.map((q,i)=>{
-    if(!q||typeof q.text!=='string'||!q.text.trim()||q.text.length>5000) throw new Error('نص السؤال '+(i+1)+' ناقص أو طويل جدًا.');
+    const text=q&&(typeof q.text==='string'?q.text:q.question);
+    const choices=q&&(Array.isArray(q.choices)?q.choices:q.options);
+    if(typeof text!=='string'||!text.trim()||text.length>5000) throw new Error('نص السؤال '+(i+1)+' ناقص أو طويل جدًا.');
     if(q.type && q.type!=='mcq') throw new Error('الاستيراد بيدعم الاختيار من متعدد بس.');
-    if(!Array.isArray(q.choices)||q.choices.length<2||q.choices.length>6||q.choices.some(c=>typeof c!=='string'||!c.trim()||c.length>2000)) throw new Error('راجع اختيارات السؤال '+(i+1)+'.');
-    if(!Number.isInteger(q.correct)||q.correct<0||q.correct>=q.choices.length) throw new Error('الإجابة الصحيحة للسؤال '+(i+1)+' مش محددة صح.');
-    if(q.points!==undefined && ![1,2,3,5,10].includes(q.points)) throw new Error('درجة السؤال '+(i+1)+' غير مدعومة.');
-    return {text:q.text.trim(),type:'mcq',choices:q.choices.map(c=>c.trim()),correct:q.correct,points:q.points??1,acceptedText:''};
+    if(!Array.isArray(choices)||choices.length<2||choices.length>6||choices.some(c=>typeof c!=='string'||!c.trim()||c.length>2000)) throw new Error('راجع اختيارات السؤال '+(i+1)+'.');
+    let correct=q.correct;
+    if(correct===undefined){
+      const txt=typeof q.correct_answer==='string'?q.correct_answer.trim():null;
+      const byText=txt?choices.findIndex(c=>c.trim()===txt):-1;
+      if(byText>=0) correct=byText;
+      else if(Number.isInteger(q.correct_index)) correct=q.correct_index;
+    }
+    if(!Number.isInteger(correct)||correct<0||correct>=choices.length) throw new Error('الإجابة الصحيحة للسؤال '+(i+1)+' مش محددة صح.');
+    if(q.points!==undefined && !(typeof q.points==='number'&&q.points>=0.5&&q.points<=100)) throw new Error('درجة السؤال '+(i+1)+' غير مدعومة.');
+    return {text:text.trim(),type:'mcq',choices:choices.map(c=>c.trim()),correct,points:q.points===undefined?1:[1,2,3,5,10].reduce((m,n)=>Math.abs(n-q.points)<Math.abs(m-q.points)?n:m),acceptedText:''};
   });
-  return {questions,title:typeof data.title==='string'?data.title.slice(0,200):'',subject:typeof data.subject==='string'?data.subject.slice(0,100):''};
+  return {questions,title:title.slice(0,200),subject:subject.slice(0,100)};
 }
 
 async function tBuilder(editId){
@@ -796,7 +821,8 @@ async function tBuilder(editId){
     <div class="card" id="bulk-import">
       <div class="h2">استيراد أسئلة من ملف</div>
       <p class="muted">اختار ملف JSON اللي جهزتهولك، أو الصق محتواه. الأسئلة هتتضاف للمسودة بس، ومش هتتحفظ ولا تتنشر إلا لما تضغط حفظ بنفسك. الملف فيه الإجابات الصحيحة، احتفظ بيه للمدرس بس.</p>
-      <label for="import-file">ملف الأسئلة (JSON)</label><input id="import-file" type="file" accept=".json,application/json">
+      <label for="import-file">ملف الأسئلة (JSON)</label><input id="import-file" type="file">
+      <label for="import-exam-no">لو الملف فيه أكتر من امتحان: رقم الامتحان</label><input id="import-exam-no" type="number" min="1" inputmode="numeric" dir="ltr">
       <details><summary style="cursor:pointer;min-height:44px;padding-top:12px">أو الصق محتوى الملف</summary>
         <textarea id="import-json" dir="ltr" rows="5" placeholder='{"questions":[{"text":"سؤال","choices":["أ","ب"],"correct":0}]}'></textarea>
         <button type="button" class="btn btn-s" id="import-paste">أضف الأسئلة للمسودة</button>
@@ -825,7 +851,7 @@ async function tBuilder(editId){
   };
   const applyImport = async raw => {
     try {
-      const imported=parseExamImport(raw);
+      const imported=parseExamImport(raw,val('#import-exam-no'));
       syncDraft();
       if(d.qs.length+imported.questions.length>100) throw new Error('الحد الأقصى للمسودة ١٠٠ سؤال.');
       d.qs.push(...imported.questions);
