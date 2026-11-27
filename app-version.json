@@ -1,1 +1,26 @@
-{"teacher":{"versionCode":9,"versionName":"3.4","apk":"https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.4/teacher-app-v3.4-arm32.apk"},"student":{"versionCode":7,"versionName":"3.2","apk":"https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.2/student-app-v3.2-arm64.apk"}}
+{
+  "teacher": {
+    "versionCode": 9,
+    "versionName": "3.4",
+    "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.4/teacher-app-v3.4-arm32.apk",
+    "abis": {
+      "armeabi-v7a": {
+        "versionCode": 7012,
+        "versionName": "4.0.2",
+        "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v4.0.2/teacher-arm32-v4.0.2.apk",
+        "sha256": "db4277ae8dc299503fde66a6f5ac013bafa21fb75859373f5386fb5833979fa5"
+      },
+      "arm64-v8a": {
+        "versionCode": 8012,
+        "versionName": "4.0.2",
+        "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v4.0.2/teacher-arm64-v4.0.2.apk",
+        "sha256": "51e9609b4f1745ed312dab8a1075f56f1b5e277eea94f3141fca7f17165c6243"
+      }
+    }
+  },
+  "student": {
+    "versionCode": 7,
+    "versionName": "3.2",
+    "apk": "https://github.com/adhamahmedr99-droid/exam-platform/releases/download/v3.2/student-app-v3.2-arm64.apk"
+  }
+}
