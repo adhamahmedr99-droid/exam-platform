@@ -218,7 +218,7 @@ async function openLanding(token, err, info){
     <p class="muted">الامتحان ${info.duration_min} دقيقة، وبيتسلّم لوحده لما الوقت يخلص. اكتب اسمك الحقيقي عشان المدرس يعرف صاحب الحل.</p>
     <label>اسم الطالب</label>
     <input type="text" id="o-name" placeholder="مثال: أحمد محمد" autocomplete="off">
-    <label>رقم واتساب ولي الأمر (اختياري)</label>
+    <label>رقم واتساب ولي الأمر</label>
     <input type="text" id="o-phone" class="ltr" placeholder="مثال: 01012345678" autocomplete="off">
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
     <div class="actions"><button class="btn btn-p" id="o-go">تسجيل وبدء الامتحان</button></div>
@@ -226,6 +226,7 @@ async function openLanding(token, err, info){
   on('#o-go','click', async () => {
     const name = val('#o-name').trim();
     if (!name) return openLanding(token, 'اكتب اسمك الأول.', info);
+    if (val('#o-phone').replace(/[^0-9٠-٩]/g,'').length < 10) return openLanding(token, 'اكتب رقم واتساب ولي الأمر (١٠ أرقام على الأقل).', info);
     const { data, error } = await sb.rpc('open_session', { p_token: token, p_name: name, p_phone: val('#o-phone').trim() });
     if (error || !data || !data.ok){
       const m = { invalid_link:'اللينك ده مش صحيح أو اتلغى. اطلب من المدرس لينك جديد.',
@@ -233,7 +234,9 @@ async function openLanding(token, err, info){
         not_yet:'الامتحان لسه مفتحش في معاده.',
         expired:'فترة الامتحان خلصت. كلم مدرسك.',
         link_off:'اللينك ده اتوقف. اطلب من المدرس لينك شغال أو كود.',
-        name_required:'اكتب اسمك الأول.' };
+        name_required:'اكتب اسمك الأول.',
+        phone_required:'اكتب رقم واتساب ولي الأمر (١٠ أرقام على الأقل).',
+        already_entered:'الاسم ده مع الرقم ده دخل الامتحان قبل كده، ومينفعش يدخل مرتين. كلم مدرسك.' };
       return openLanding(token, m[data && data.error] || 'حصلت مشكلة، جرب تاني.', info);
     }
     startStudentSession(data);
